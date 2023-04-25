@@ -1,0 +1,22 @@
+<program> -> <declaration_statement> main ( ) <compound_statement> <block_statement>
+<function_block> -> <function_definition> <function_block> | <epsilon>
+<function_definition> -> <function_type> <identifier> ( <function_definition_parameter_list> ) <compound_statement>
+<function_definition_parameter_list> -> <variable_type> <identifier> | <variable_type> <identifier> , <function_definition形参>
+<statement> -> <declaration_statement> | <execution_statement>
+<declaration_statement> -> <value_declaration> | <function_declaration> | <epsilon>
+<value_declaration> -> <constant_declaration> | <variable_declaration>
+<constant_declaration> -> const <constant_type> <constant_declaration_table>
+<constant_type> -> int | char | float
+<constant_declaration_table> -> <identifier> = <constant> ; | <identifier> = <constant> , <constant_declaration_table>
+<variable_declaration> -> <variable_type> <variable_declaration_table>
+<variable_declaration_table> -> <single_variable_declaration> ; | <single_variable_declaration> , <variable_declaration_table>
+<single_variable_declaration> -> <variable> | <variable> = <expression>
+<variable_type> -> int | char | float void
+<function_declaration_parameter_list> -> <function_declaration_parameter> | <epsilon>
+<function_declaration_parameter> -> <variable_type> | <variable_type> , <function_declaration形参>
+<execution_statement> -> <data_processing_statement> | <control_statement> | <compound_statement>
+<data_processing_statement> -> <assign_statement> | <function_call_statement>
+<assign_statement> -> <assign_expression> ;
+<function_call_statement> -> <function_call> ;
+<identifier> -> IDN
+<constant> -> CONST | FCONST | CCONST | SCONST
