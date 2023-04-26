@@ -24,4 +24,4 @@ if (action[s, t] == "ri")
 - 分析树编码了句子的推导过程
 - 但是包含了很多不必要的信息（注：这些节点要占用额外的存储空间）
 - 本质上，这里的哪些信息是重要的？
-![image](https://user-images.githubusercontent.com/97227323/234457726-8aee58e7-e0e8-4935-a3a4-89db7d076e50.png)
+- ![image](https://user-images.githubusercontent.com/97227323/234457726-8aee58e7-e0e8-4935-a3a4-89db7d076e50.png)
