@@ -1,6 +1,7 @@
 #include <iostream>
 #include "include/Grammar.h"
 #include "include/LL1Parser.h"
+#include "Lexer/FA.h"
 
 void GrammarTest()
 {
@@ -27,7 +28,7 @@ void GrammarTest()
 
 void RegexTest()
 {
-
+    FA fa("(a|b)((c|d)*)");
 }
 
 int main() {

@@ -11,4 +11,4 @@ add_executable(Grammar
         Grammar/include/Grammar.h
         Grammar/src/LL1Parser.cpp
         Grammar/include/LL1Parser.h
-        main.cpp)
+        main.cpp Lexer/FA.cpp Lexer/FA.h)
