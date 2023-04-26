@@ -19,3 +19,9 @@ if (action[s, t] == "ri")
 ```
 在分析栈上维护三元组：<symbol, value, state>
 其中**symbol**是终结符或非终结符，**value**是symbol所拥有的值，**state**是当前的分析状态
+### 抽象语法树
+#### 分析树
+- 分析树编码了句子的推导过程
+- 但是包含了很多不必要的信息（注：这些节点要占用额外的存储空间）
+- 本质上，这里的哪些信息是重要的？
+- ![image](https://user-images.githubusercontent.com/97227323/234457457-f6a83685-5053-40ac-a64e-122e3fe37ddb.png)
