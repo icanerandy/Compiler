@@ -28,7 +28,7 @@ void GrammarTest()
 
 void RegexTest()
 {
-    FA fa("(a|b)((c|d)*)");
+    FA fa("a(b|c)*");
 }
 
 int main() {

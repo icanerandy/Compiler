@@ -11,19 +11,23 @@
 #include "FA.h"
 
 #include <utility>
+#include <map>
 
 FA::FA(std::string regex)
     :
     regex_(std::move(regex)),
-    state_num_{}
+    state_num_{0}
 {
     CheckLegal();
     AddJoinSymbol();
 
     PostFix();
 
-    cell_ = ExpressToNFA();
-    Display();
+    nfa_ = ExpressToNFA();
+    DisplayNFA();
+
+    dfa_ = WorkList();
+    DisplayDFA();
 }
 
 /*!
@@ -268,9 +272,7 @@ int FA::Icp(char ch)
  */
 State FA::NewStateNode()
 {
-    State new_state{};
-    new_state.value = state_num_ + 1;
-    state_num_++;
+    State new_state{++state_num_};
 
     return new_state;
 }
@@ -278,7 +280,6 @@ State FA::NewStateNode()
 Cell FA::DoCell(char ch)
 {
     Cell new_cell;
-    new_cell.edge_count = 0;
     Edge new_edge{};
 
     // 获取新状态节点
@@ -291,7 +292,7 @@ Cell FA::DoCell(char ch)
     new_edge.trans_symbol = ch;
 
     // 构建单元
-    new_cell.edge_vector.emplace_back(new_edge);
+    new_cell.edge_set.emplace_back(new_edge);
     new_cell.start_state = start_state;
     new_cell.end_state = end_state;
 
@@ -300,14 +301,13 @@ Cell FA::DoCell(char ch)
 
 void FA::CellEdgeSetCopy(Cell& des, const Cell& src)
 {
-    des.edge_vector.insert(des.edge_vector.begin(),
-                            src.edge_vector.begin(), src.edge_vector.end());
+    des.edge_set.insert(des.edge_set.begin(),
+                            src.edge_set.begin(), src.edge_set.end());
 }
 
 Cell FA::DoUnit(const Cell& left, const Cell& right)
 {
     Cell new_cell;
-    new_cell.edge_count = 0;
     Edge edge1{}, edge2{}, edge3{}, edge4{};
 
     // 获取新状态节点
@@ -337,10 +337,10 @@ Cell FA::DoUnit(const Cell& left, const Cell& right)
     CellEdgeSetCopy(new_cell, right);
 
     // 将新构建的四条边加入edge_set
-    new_cell.edge_vector.emplace_back(edge1);
-    new_cell.edge_vector.emplace_back(edge2);
-    new_cell.edge_vector.emplace_back(edge3);
-    new_cell.edge_vector.emplace_back(edge4);
+    new_cell.edge_set.emplace_back(edge1);
+    new_cell.edge_set.emplace_back(edge2);
+    new_cell.edge_set.emplace_back(edge3);
+    new_cell.edge_set.emplace_back(edge4);
 
     // 构建new_cell的起始状态和结束状态
     new_cell.start_state = start_state;
@@ -353,7 +353,7 @@ Cell FA::DoJoin(Cell &left, Cell &right)
 {
     // 将left的结束状态和right的开始状态合并，将right的边复制给left，将left返回
     // 将right中所有以小型nfa的start_state开头的边全部修改
-    for (auto& edge : right.edge_vector)
+    for (auto& edge : right.edge_set)
     {
         if (edge.start_state == right.start_state)
             edge.start_state = left.end_state;
@@ -371,7 +371,6 @@ Cell FA::DoJoin(Cell &left, Cell &right)
 Cell FA::DoStar(const Cell& cell)
 {
     Cell new_cell;
-    new_cell.edge_count = 0;
     Edge edge1{}, edge2{}, edge3{}, edge4{};
 
     // 获取新的状态节点
@@ -399,10 +398,10 @@ Cell FA::DoStar(const Cell& cell)
     // 先将cell的edge_set复制到new_cell中
     CellEdgeSetCopy(new_cell, cell);
     // 将新构建的四条边加入edge_set中
-    new_cell.edge_vector.emplace_back(edge1);
-    new_cell.edge_vector.emplace_back(edge2);
-    new_cell.edge_vector.emplace_back(edge3);
-    new_cell.edge_vector.emplace_back(edge4);
+    new_cell.edge_set.emplace_back(edge1);
+    new_cell.edge_set.emplace_back(edge2);
+    new_cell.edge_set.emplace_back(edge3);
+    new_cell.edge_set.emplace_back(edge4);
 
     // 构建new_cell的起始状态和终止状态
     new_cell.start_state = start_state;
@@ -415,7 +414,7 @@ Cell FA::DoStar(const Cell& cell)
  * 表达式转NFA处理函数，返回最终的NFA
  * @return
  */
-Cell FA::ExpressToNFA()
+NFA FA::ExpressToNFA()
 {
     size_t length = regex_.size();
     char element;
@@ -425,7 +424,6 @@ Cell FA::ExpressToNFA()
     for (size_t i = 0; i < length; ++i)
     {
         element = regex_.at(i);
-        cell.edge_count = cell.edge_vector.size();
         switch (element)
         {
             case '|':
@@ -460,21 +458,153 @@ Cell FA::ExpressToNFA()
     cell = s.top();
     s.pop();
 
-    return cell;
+    return NFA(cell);
 }
 
-void FA::Display()
+/*!
+ * 子集构造算法：工作表算法
+ * @return - DFA状态表
+ */
+DFA FA::WorkList()
 {
-    std::cout << "NFA 的边数：" << cell_.edge_vector.size() << std::endl;
-    std::cout << "NFA 的起始状态：" << cell_.start_state << std::endl;
-    std::cout << "NFA 的终止状态：" << cell_.end_state << std::endl;
+    // 计算开始状态的边界
+    std::set<State> q0 = Closure(nfa_.start_state_);
+    // DFA中所有的状态机
+    state_num_ = 0;
+    std::map<std::set<State>, size_t> Q;    // 边界状态集到DFA状态编号的映射
+    Q.emplace(q0, ++state_num_);
+    // DFA单元
+    Cell cell;
+
+    // 工作表，存放着状态（此处的状态为NFA状态的集合）
+    std::queue<std::set<State>> worklist;
+    worklist.emplace(q0);
+
+    while (!worklist.empty())
+    {
+        std::set<State> q = worklist.front();
+        worklist.pop();
+
+        // 遍历符号集
+        for (const auto& symbol : nfa_.symbol_set_)
+        {
+            if (symbol == '#') continue;
+
+            std::set<State> t;
+            // 遍历边界状态集
+            for (const auto& state : q)
+            {
+                // 遍历边，查找可通过边界状态（即边界状态集中的状态state）接收符号symbol到达的状态
+                for (const auto& edge : nfa_.edge_set_)
+                {
+                    if (edge.start_state == state && edge.trans_symbol == symbol)
+                    {
+                        std::set<State> temp = Closure(edge.end_state);  // 通过当前符号可到达的某个状态集
+                        t.insert(temp.begin(), temp.end());
+                    }
+                }
+            }
+
+            // 如果计算出来的t不为之前计算出来的任一状态集
+            if (!t.empty())
+            {
+                if (Q.find(t) == Q.end())
+                {
+                    Q.emplace(t, ++state_num_);
+                    worklist.emplace(t);
+
+                    // 如果t中含有NFA集终态，则将对应的边界状态集的编号加入到DFA的终态集中
+                    if (t.find(nfa_.end_state_) != t.end())
+                        cell.end_state_set.emplace(Q.find(t)->second);
+                }
+
+                cell.edge_set.emplace_back(Connect(Q, q, t, symbol));
+            }
+        }
+    }
+
+    return DFA(cell);
+}
+
+/*!
+ * 求当前状态的ε-闭包
+ * @param state
+ * @return
+ */
+std::set<State> FA::Closure(const State &state)
+{
+    std::set<State> closure;
+    std::queue<State> Q;
+    Q.emplace(state);
+
+    while (!Q.empty())
+    {
+        State q = Q.front();
+        Q.pop();
+        closure.emplace(q);
+
+        for (const auto& edge : nfa_.edge_set_)
+        {
+            if (edge.start_state == q && edge.trans_symbol == '#')
+                Q.emplace(edge.end_state);
+        }
+    }
+
+    return closure;
+}
+
+/*!
+ * 连接工作表中当前状态集和新边界状态集
+ * @param Q - 边界状态集到DFA状态编号的映射
+ * @param from - 工作表中当前的状态集
+ * @param to - 接收一个符号后到达的新边界状态集
+ * @param symbol - 接收的符号
+ * @return - 一条连接工作表中当前状态集和新边界状态集的边，边的权为symbol
+ */
+Edge FA::Connect(const std::map<std::set<State>, size_t>& Q,
+                 const std::set<State>& from, const std::set<State>& to,
+                 char symbol)
+{
+    Edge edge{};
+    edge.start_state = Q.find(from)->second;
+    edge.end_state = Q.find(to)->second;
+    edge.trans_symbol = symbol;
+
+    return edge;
+}
+
+void FA::DisplayNFA()
+{
+    std::cout << "NFA 的边数：" << nfa_.edge_count_ << std::endl;
+    std::cout << "NFA 的起始状态：" << nfa_.start_state_ << std::endl;
+    std::cout << "NFA 的终止状态集为：" << nfa_.end_state_ << std::endl;
 
     size_t i = 0;
-    for (const auto& edge : cell_.edge_vector)
+    for (const auto& edge : nfa_.edge_set_)
     {
         std::cout << "第" << i + 1 << "条边的起始状态：" << edge.start_state
                     << "  结束状态：" << edge.end_state
                     << "  转换符：" << edge.trans_symbol << std::endl;
+        ++i;
+    }
+    std::cout << "结束" << std::endl;
+}
+
+void FA::DisplayDFA()
+{
+    std::cout << "DFA 的边数：" << dfa_.edge_count_ << std::endl;
+    std::cout << "DFA 的起始状态：" << dfa_.start_state_ << std::endl;
+    std::cout << "DFA 的终止状态：";
+    for (const auto& state : dfa_.end_state_)
+        std::cout << state << " ";
+    std::cout << std::endl;
+
+    size_t i = 0;
+    for (const auto& edge : dfa_.edge_set_)
+    {
+        std::cout << "第" << i + 1 << "条边的起始状态：" << edge.start_state
+                  << "  结束状态：" << edge.end_state
+                  << "  转换符：" << edge.trans_symbol << std::endl;
         ++i;
     }
     std::cout << "结束" << std::endl;
