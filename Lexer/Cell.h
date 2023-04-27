@@ -76,7 +76,7 @@ struct Edge
 // NFA或DFA单元，一个大的NFA或DFA单元可以是由很多小单元通过规则拼接起来
 struct Cell
 {
-    std::vector<Edge> edge_set; // 这个NFA单元拥有的边
+    std::set<Edge> edge_set; // 这个NFA单元拥有的边
     State start_state;  // 开始状态
     State end_state;    // 结束状态，供NFA使用（本程序中正规式转NFA，转换后得到的NFA只有一个初态一个终态）
     std::set<State> end_state_set;  // 结束状态集，供DFA使用（本程序中DFA只有一个初态，但可以有多个终态）
