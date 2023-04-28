@@ -8,8 +8,8 @@
   ******************************************************************************
   */
 
-#ifndef GRAMMAR_DFA_H
-#define GRAMMAR_DFA_H
+#ifndef COMPILER_DFA_H
+#define COMPILER_DFA_H
 
 #include "Cell.h"
 #include "NFA.h"
@@ -60,4 +60,4 @@ private:
 /********************************************/
 
 
-#endif //GRAMMAR_DFA_H
+#endif //COMPILER_DFA_H

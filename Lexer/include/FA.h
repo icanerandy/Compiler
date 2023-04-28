@@ -8,8 +8,8 @@
   ******************************************************************************
   */
 
-#ifndef GRAMMAR_FA_H
-#define GRAMMAR_FA_H
+#ifndef COMPILER_FA_H
+#define COMPILER_FA_H
 
 #include "NFA.h"
 #include "DFA.h"
@@ -36,4 +36,4 @@ private:
 };
 
 
-#endif //GRAMMAR_FA_H
+#endif //COMPILER_FA_H

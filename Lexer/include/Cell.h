@@ -2,8 +2,8 @@
 // Created by icaner on 2023/4/27.
 //
 
-#ifndef GRAMMAR_CELL_H
-#define GRAMMAR_CELL_H
+#ifndef COMPILER_CELL_H
+#define COMPILER_CELL_H
 
 #include <iostream>
 #include <set>
@@ -83,4 +83,4 @@ struct Cell
 };
 
 
-#endif //GRAMMAR_CELL_H
+#endif //COMPILER_CELL_H

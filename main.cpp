@@ -1,7 +1,8 @@
 #include <iostream>
 #include "include/Grammar.h"
 #include "include/LL1Parser.h"
-#include "Lexer/FA.h"
+#include "Lexer/include/FA.h"
+#include "Lexer/include/Lexer.h"
 
 void GrammarTest()
 {
@@ -36,8 +37,14 @@ void RegexTest()
         std::cout << "Rejected." << std::endl;
 }
 
+void LexerTest()
+{
+    Lexer lexer(R"(D:\Project\CLion\Compiler\Lexer\test.txt)",
+                R"(D:\Project\CLion\Compiler\Lexer\out.txt)");
+}
+
 int main() {
-    RegexTest();
+    LexerTest();
 
     getchar();
     return 0;
