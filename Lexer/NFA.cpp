@@ -25,8 +25,6 @@ NFA::NFA(const std::string& regex)
 
     for (const auto& edge : edge_set_)
         symbol_set_.emplace(edge.trans_symbol);
-
-    Display();
 }
 
 /*!
@@ -178,7 +176,6 @@ Cell NFA::DoJoin(Cell &left, Cell &right)
             ++it;
         }
     }
-    state_num_--;
 
     CellEdgeSetCopy(left, right);
 

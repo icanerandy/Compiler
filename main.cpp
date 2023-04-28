@@ -28,7 +28,12 @@ void GrammarTest()
 
 void RegexTest()
 {
-    FA fa("f(ee|ie)");
+    FA fa("((ab|ab*)ab*)*a|a(bc)");
+
+    if (fa.Judge("abaa"))
+        std::cout << "Accepted." << std::endl;
+    else
+        std::cout << "Rejected." << std::endl;
 }
 
 int main() {

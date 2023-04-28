@@ -15,17 +15,19 @@
 DFA::DFA()
 = default;
 
-DFA::DFA(NFA nfa)
+DFA::DFA(const NFA& nfa)
     :
-    nfa_(std::move(nfa)),
+    nfa_(nfa),
     start_state_(1)
 {
+    nfa.Display();
+
     NFA2DFA();
-    std::cout << "NFA -> DFA: " << std::endl;
+
     Display();
 
     DFA2MFA();
-    std::cout << "NFA -> DFA: " << std::endl;
+
     Display();
 }
 
@@ -37,7 +39,7 @@ void DFA::NFA2DFA()
     Cell cell = WorkList();
     edge_set_ = cell.edge_set;
     edge_count_ = cell.edge_set.size();
-    start_state_ = nfa_.start_state_;
+    start_state_ = cell.start_state;
     end_state_ = cell.end_state_set;
 
     for (const auto& edge : edge_set_)
@@ -65,6 +67,10 @@ Cell DFA::WorkList()
     Q.emplace(q0, ++state_num_);
     // DFA单元
     Cell cell;
+    cell.start_state = 1;
+    // 如果q0中含有NFA集终态，则将对应的边界状态集的编号加入到DFA的终态集中
+    if (q0.find(nfa_.end_state_) != q0.end())
+        cell.end_state_set.emplace(Q.find(q0)->second);
 
     // 工作表，存放着状态（此处的状态为NFA状态的集合）
     std::queue<std::set<State>> worklist;
@@ -373,4 +379,16 @@ void DFA::Display()
         ++i;
     }
     std::cout << "结束" << std::endl;
+}
+
+bool DFA::Judge(const std::string& str)
+{
+    State state = start_state_;
+    for (const auto& ch : str)
+    {
+        state = dfa_table_[state][ch];
+    }
+    if (end_state_.find(state) == end_state_.end())
+        return false;
+    return true;
 }

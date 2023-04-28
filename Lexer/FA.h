@@ -18,6 +18,7 @@ class FA
 {
 public:
     explicit FA(std::string regex);
+    bool Judge(const std::string& str);
 
 private:
     bool CheckLegal();
@@ -25,8 +26,8 @@ private:
     bool CheckParenthesis();
     void AddJoinSymbol();
     void PostFix();
-    static int Isp(char ch);
-    static int Icp(char ch);
+    bool IsOperator(char c);
+    int GetPriority(char ch);
 
 private:
     std::string regex_;

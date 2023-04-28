@@ -146,118 +146,94 @@ void FA::AddJoinSymbol()
  */
 void FA::PostFix()
 {
-    // 设定regex_的最后一个符号式“#”，而其“#”一开始先放在栈s的栈底
-    regex_ += '#';
-
-    std::stack<char> s;
-    char ch = '#', ch1, op;
-    s.push(ch);
-
-    // 读入一个字符
-    std::string new_regex;
-    size_t read_location = 0;
-    ch = regex_.at(read_location++);
-    while (!s.empty())
+    std::stack<char> op;
+    std::string suffix;
+    for (const auto &c: regex_)
     {
-        if (std::isalpha(ch))
-        {
-            new_regex += ch;
-            ch = regex_.at(read_location++);
+        if (IsOperator(c))
+        {//是运算符
+            if (op.empty())//栈空，直接入栈
+                op.emplace(c);
+            else
+            {//优先级更大的运算符全部出栈
+                while (!op.empty())
+                {
+                    int t = op.top();
+                    if (GetPriority(c) <= GetPriority(t))
+                    {
+                        op.pop();
+                        suffix.push_back(t);
+                    }
+                    else
+                        break;
+                }
+                op.emplace(c);
+            }
         }
         else
         {
-            //cout<<"输出操作符："<<ch<<endl;
-            ch1 = s.top();
-            if (Isp(ch1) < Icp(ch))
-            {
-                s.push(ch);
-                //cout<<"压栈"<<ch<<"  读取下一个"<<endl;
-                ch = regex_.at(read_location++);
+            if (c == '(')//左括号直接入栈
+                op.emplace(c);
+            else if (c == ')')
+            {//遇到右括号，一直出栈，直到遇到左括号
+                while (op.top() != '(')
+                {
+                    suffix.push_back(op.top());
+                    op.pop();
+                }
+                op.pop();
             }
-            else if (Isp(ch1)>Icp(ch))
-            {
-                op = s.top();
-                s.pop();
-                //cout<<"退栈"<<op<<" 添加到输出字符串"<<endl;
-                new_regex += op;
-                //cout<<op;
-            }
-            else  //考虑优先级相等的情况
-            {
-                op = s.top();
-                s.pop();
-                //cout<<"退栈"<<op<<"  但不添加到输入字符串"<<endl;
-
-                if (op == '(')
-                    ch = regex_.at(read_location++);
-            }
+            else
+                suffix.push_back(c);//操作数直接放入表达式中
         }
     }
+    while (!op.empty())
+    {//取出剩余的运算符
+        suffix.push_back(op.top());
+        op.pop();
+    }
 
-    regex_ = new_regex;
+    regex_ = suffix;
     std::cout << "后缀表达式：" << regex_ << std::endl;
 }
 
-/*
-构造优先级表规则：（1）先括号内，再括号外；（2）优先级由高到低：闭包、|、+；（3）同级别，先左后右。
-优先级表：
-	 #	(	*	|	+	)
-isp  0	1	7	5	3	8
-icp	 0	8	6	4	2	1
-*/
-
-/*********************运算符优先级关系表********************/
-/*
-	c1\c2	(	*	|	+	)	#
-	(		<	<	<	<	=	>
-	*		<	>	>	>	>	>
-	|		<	<	>	>	>	>
-	+		<	<	<	>	>	>
-	#		<	<	<	<	<	=
-*/
-/***********************************************************/
-
-/*!
- * in stack priority  栈内优先级，栈顶的字符的优先级
- * @param ch
- * @return
- */
-int FA::Isp(char ch)
-{
-    switch (ch)
+bool FA::IsOperator(char c)
+{//判断是不是运算符
+    switch (c)
     {
-        case '#': return 0;
-        case '(': return 1;
-        case '*': return 7;
-        case '|': return 5;
-        case '+': return 3;
-        case ')': return 8;
+        case '*':
+        case '|':
+        case '+':
+            return true;
         default:
-            //若走到这一步，说明出错了
-            std::cerr << "ERROR!" << std::endl;
             return false;
     }
 }
 
-/*!
- * in coming priority 栈外优先级，当前扫描到的字符的优先级
- * @param ch
- * @return
- */
-int FA::Icp(char ch)
+int FA::GetPriority(char ch)
 {
+    int level = 0; // 优先级
     switch (ch)
     {
-        case '#': return 0;
-        case '(': return 8;
-        case '*': return 6;
-        case '|': return 4;
-        case '+': return 2;
-        case ')': return 1;
+        case '(':
+            level = 1;
+            break;
+        case '|':
+            level = 2;
+            break;
+        case '+':
+            level = 3;
+            break;
+        case '*':
+            level = 4;
+            break;
         default:
-            //若走到这一步，说明出错了
-            std::cerr << "ERROR!" << std::endl;
-            return false;
+            break;
     }
+    return level;
 }
 
+bool FA::Judge(const std::string& str)
+{
+    return dfa_.Judge(str);
+}

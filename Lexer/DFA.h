@@ -20,9 +20,10 @@ class DFA
 {
 public:
     explicit DFA();
-    explicit DFA(NFA  nfa);
+    explicit DFA(const NFA& nfa);
 public:
     void Display();
+    bool Judge(const std::string& str);
 
 private:    // NFA-DFA
     void NFA2DFA();
