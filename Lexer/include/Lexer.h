@@ -24,6 +24,8 @@
 
 // 定义cminus的缓冲区
 #define BUFLEN 4096
+// 定义串的最大长度
+#define MAXLEN 4096
 
 // token结构体
 typedef struct Token
@@ -40,18 +42,24 @@ public:
     Lexer(const std::string& input_file, const std::string& output_file);
 
 private:
-    void OpenFile(const std::string& input_file, const std::string& output_file);
+    void Init(const std::string& input_file, const std::string& output_file);
+    void Tokenize();
     Token Gettoken();   // 获取一个token
     char GetNextChar(); // 获取下一个字符
+    std::string GetMorpheme(); // 通过开始指针和向前指针获取词素
+    void RollBack();    // 回退一个字符
 
 private:
-    size_t line_no_;  // 行号
-    size_t line_pos_;   // 行内位置，方便打印，是用来读取和回退位于源文件内指针的标记
-    size_t buf_size_;   // 缓冲区内有效字符长度
+    size_t line_no_, column_;  // 行号, 列号
+    size_t lexeme_beginning_;   // 开始指针
+    size_t forward_;     // 向前指针
     std::ifstream in_;    // 输入流
     std::ofstream out_;   // 输出流
 
-    char line_buffer_[BUFLEN]{};
+private:
+    std::vector<Token> tokens;
+
+    char line_buffer_[2*BUFLEN]{};
 };
 
 

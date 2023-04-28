@@ -44,8 +44,8 @@ void LexerTest()
 }
 
 int main() {
-    RegexTest();
-    //LexerTest();
+    //RegexTest();
+    LexerTest();
 
     getchar();
     return 0;
