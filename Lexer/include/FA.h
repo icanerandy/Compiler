@@ -14,6 +14,9 @@
 #include "NFA.h"
 #include "DFA.h"
 
+using RegexType = bool;  // true代表为运算符号，false代表为普通符
+using RegexSymbol = std::pair<char, RegexType>;
+
 class FA
 {
 public:
@@ -27,10 +30,10 @@ private:
     void AddJoinSymbol();
     void PostFix();
     bool IsOperator(char c);
-    int GetPriority(char ch);
+    int GetPriority(RegexSymbol symbol);
 
 private:
-    std::string regex_;
+    std::vector<RegexSymbol> regex_;
     NFA nfa_;
     DFA dfa_;
 };

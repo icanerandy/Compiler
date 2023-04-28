@@ -44,7 +44,7 @@ void Lexer::OpenFile(const std::string &input_file, const std::string& output_fi
 
 Token Lexer::Gettoken()
 {
-
+    return Token();
 }
 
 char Lexer::GetNextChar()

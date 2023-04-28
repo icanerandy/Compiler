@@ -8,6 +8,7 @@
   ******************************************************************************
   */
 
+
 #ifndef COMPILER_LEXER_H
 #define COMPILER_LEXER_H
 
@@ -19,8 +20,7 @@
 #include <istream>
 #include <ostream>
 
-#include "Type.h"
-
+#include "Util.h"
 
 // 定义cminus的缓冲区
 #define BUFLEN 4096

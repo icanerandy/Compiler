@@ -29,9 +29,9 @@ void GrammarTest()
 
 void RegexTest()
 {
-    FA fa("((ab|ab*)ab*)*a|a(bc)");
+    FA fa(R"(if|ifif)");
 
-    if (fa.Judge("abaa"))
+    if (fa.Judge(R"(ififf)"))
         std::cout << "Accepted." << std::endl;
     else
         std::cout << "Rejected." << std::endl;
@@ -44,7 +44,8 @@ void LexerTest()
 }
 
 int main() {
-    LexerTest();
+    RegexTest();
+    //LexerTest();
 
     getchar();
     return 0;

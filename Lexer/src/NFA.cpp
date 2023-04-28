@@ -13,7 +13,7 @@
 NFA::NFA()
 = default;
 
-NFA::NFA(const std::string& regex)
+NFA::NFA(const std::vector<RegexSymbol>& regex)
     :
     state_num_{0}
 {
@@ -31,44 +31,50 @@ NFA::NFA(const std::string& regex)
  * 表达式转NFA处理函数，返回最终的NFA
  * @return
  */
-Cell NFA::ExpressToNFA(const std::string& regex)
+Cell NFA::ExpressToNFA(const std::vector<RegexSymbol>& regex)
 {
     size_t length = regex.size();
-    char element;
+    RegexSymbol element;
     Cell cell, left, right;
 
     std::stack<Cell> s;
     for (size_t i = 0; i < length; ++i)
     {
         element = regex.at(i);
-        switch (element)
+        if (element.second) // 是操作符
         {
-            case '|':
-                right = s.top();
-                s.pop();
-                left = s.top();
-                s.pop();
-                cell = DoUnit(left, right);
-                s.push(cell);
-                break;
-            case '*':
-                left = s.top();
-                s.pop();
-                cell = DoStar(left);
-                s.push(cell);
-                break;
-            case '+':
-                right = s.top();
-                s.pop();
-                left = s.top();
-                s.pop();
-                cell = DoJoin(left, right);
-                s.push(cell);
-                break;
-            default:
-                cell = DoCell(element);
-                s.push(cell);
+            switch (element.first)
+            {
+                case '|':
+                    right = s.top();
+                    s.pop();
+                    left = s.top();
+                    s.pop();
+                    cell = DoUnit(left, right);
+                    s.push(cell);
+                    break;
+                case '*':
+                    left = s.top();
+                    s.pop();
+                    cell = DoStar(left);
+                    s.push(cell);
+                    break;
+                case '+':
+                    right = s.top();
+                    s.pop();
+                    left = s.top();
+                    s.pop();
+                    cell = DoJoin(left, right);
+                    s.push(cell);
+                    break;
+            }
         }
+        else
+        {
+            cell = DoCell(element.first);
+            s.push(cell);
+        }
+
     }
 
     std::cout << "处理完毕！" << std::endl;

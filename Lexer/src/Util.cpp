@@ -1,9 +1,14 @@
-//
-// Created by icaner on 2023/4/28.
-//
+/**
+  ******************************************************************************
+  * @file           : Util.cpp
+  * @author         : icaner
+  * @brief          : None
+  * @attention      : None
+  * @date           : 2023/4/28
+  ******************************************************************************
+  */
 
-#ifndef COMPILER_TYPE_H
-#define COMPILER_TYPE_H
+#include "include/Util.h"
 
 /*
  * 种别码syn   单词符号symbol  类型type
@@ -46,11 +51,8 @@
 // SOP 结构分隔符:		(	)	,	[	]	{	}
 // RESERVED 保留字:	    void int float char String if else while
 
-#include <unordered_map>
-#include <string>
-
 std::unordered_map<std::string, int>
-keyword_list = {
+Util::keyword_list_ = {
         {"void", 1},
         {"int", 2},
         {"float", 3},
@@ -60,5 +62,3 @@ keyword_list = {
         {"else", 7},
         {"while", 8}
 };
-
-#endif //COMPILER_TYPE_H

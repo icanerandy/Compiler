@@ -13,17 +13,20 @@
 
 #include "Cell.h"
 
+using RegexType = bool;  // true代表为运算符号，false代表为普通符
+using RegexSymbol = std::pair<char, RegexType>;
+
 /***************NFA的矩阵结构****************/
 
 class NFA
 {
 public:
     explicit NFA();
-    explicit NFA(const std::string& regex);
+    explicit NFA(const std::vector<RegexSymbol>& regex);
     void Display() const;
 
 private:
-    Cell ExpressToNFA(const std::string& regex);    // 表达式转NFA
+    Cell ExpressToNFA(const std::vector<RegexSymbol>& regex);    // 表达式转NFA
     Cell DoCell(char ch);  // 处理 a
     Cell DoUnit(const Cell& left, const Cell& right); // 处理 a|b
     Cell DoJoin(Cell& left, Cell& right); // 处理 ab
