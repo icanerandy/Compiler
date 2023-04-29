@@ -13,7 +13,7 @@
 Lexer::Lexer(const std::string& input_file, const std::string& output_file)
     :
     line_no_(1),
-    column_(1)
+    column_no_(1)
 {
     Init(input_file, output_file);
 
@@ -22,53 +22,372 @@ Lexer::Lexer(const std::string& input_file, const std::string& output_file)
 
 void Lexer::Init(const std::string &input_file, const std::string& output_file)
 {
+    // ³õÊ¼»¯ÊäÈëÊä³öÎÄ¼ş
     in_.open(input_file, std::ios::in);
     if (!in_.is_open())
     {
-        std::cerr << "æ‰“å¼€æ–‡ä»¶é”™è¯¯ï¼" << std::endl;
+        std::cerr << "´ò¿ªÎÄ¼ş´íÎó£¡" << std::endl;
         exit(-1);
     }
 
     out_.open(output_file, std::ios::out);
     if (!out_.is_open())
     {
-        std::cerr << "æ‰“å¼€æ–‡ä»¶é”™è¯¯ï¼" << std::endl;
+        std::cerr << "´ò¿ªÎÄ¼ş´íÎó£¡" << std::endl;
         exit(-1);
     }
 
-    // åˆå§‹åŒ–ç¼“å†²åŒº
+    // ³õÊ¼»¯»º³åÇø
     in_.read((char *)(line_buffer_), BUFLEN - 1);
-    line_buffer_[in_.gcount()] = EOF;
+    line_buffer_[in_.gcount()] = EOF;   // ÉÚ±øÔªËØ
 
     lexeme_beginning_ = forward_ = 0;
-    // è®¾ç½®å“¨å…µï¼ˆsentinelï¼‰å­—ç¬¦
-//    line_buffer_[BUFLEN - 1] = EOF;
-//    line_buffer_[2*BUFLEN - 1] = EOF;
+
+    // ³õÊ¼»¯¸÷Àà×´Ì¬»ú
+    std::map<std::string, std::string> regex_map = ReadRegex();
+
+    FA identifier_fa(regex_map.at("identifier"));
+    FA operator_fa(regex_map.at("operator"));
+    FA decimal_fa(regex_map.at("decimal"));
+    FA hex_fa(regex_map.at("hex"));
+    FA oct_fa(regex_map.at("oct"));
+    FA bin_fa(regex_map.at("bin"));
+    FA float_fa(regex_map.at("float"));
+
+    identifier_dfa_ = identifier_fa.GetDFA();
+    operator_dfa_ = operator_fa.GetDFA();
+    decimal_dfa_ = decimal_fa.GetDFA();
+    hex_dfa_ = hex_fa.GetDFA();
+    oct_dfa_ = oct_fa.GetDFA();
+    bin_dfa_ = bin_fa.GetDFA();
+    float_dfa_ = float_fa.GetDFA();
+}
+
+std::map<std::string, std::string> Lexer::ReadRegex()
+{
+    std::map<std::string, std::string> regex_map;
+
+    std::ifstream in(R"(D:\Project\CLion\Compiler\Lexer\regex.txt)", std::ios::in);
+    if (!in.is_open())
+    {
+        std::cerr << "¶ÁÈ¡ÎÄ¼şÊ§°Ü£¡" << std::endl;
+        exit(-1);
+    }
+
+    std::string line;
+    while (std::getline(in, line))
+    {
+        std::stringstream ss(line);
+        std::string category;
+
+        ss >> category;
+        category.pop_back();
+        std::string regex_symbol;
+
+        regex_map[category].append("(");
+        while (ss >> regex_symbol)
+        {
+            if (regex_map.find(regex_symbol) != regex_map.end())
+            {
+                regex_map[category].append(regex_map.at(regex_symbol));
+            }
+            else
+            {
+                regex_map[category].append(regex_symbol);
+            }
+        }
+        regex_map[category].append(")");
+    }
+
+    in.close();
+    return regex_map;
 }
 
 void Lexer::Tokenize()
 {
     line_no_ = 1;
-    column_ = 1;
+    column_no_ = 1;
 
     Token token;
     do
     {
         token = Gettoken();
+        std::cout <<  "(" << token.line << ":" << token.column << ")  " << "{" << token.content << ", " << token.type << "}" << std::endl;
+        if (token.type != "ERROR")
+            tokens_.emplace_back(token);
     } while (token.type != "EOF");
 
-    std::cout << "è¯æ³•åˆ†æå®Œæˆï¼" << std::endl;
-}
-
-Token Lexer::Gettoken()
-{
-    char ch = GetNextChar();
-
-
+    std::cout << "´Ê·¨·ÖÎöÍê³É£¡" << std::endl;
 }
 
 /*!
- * åŒç¼“å†²åŒº
+ * Ö÷Òª·ÖÎªÒÔÏÂ¼¸Àà£º
+ * 1. ¿Õ°×·û
+ * 2. ×¢ÊÍ ¡ª¡ª µ¥ĞĞ¡¢¶àĞĞ
+ * 3. ×ÖÃæÁ¿ ¡ª¡ª µ¥×Ö·û¡¢×Ö·û´®
+ * 4. ±êÊ¶·û£¨º¬¹Ø¼ü×Ö£©
+ * 5. Êı×Ö
+ * 6. ²Ù×÷·û»ò½ç·û
+ * @return
+ */
+Token Lexer::Gettoken()
+{
+    bool deal_success;
+    Token token;
+    char next_char = LookPreChar();
+
+    while (IsBlankChar(next_char)) // ¿Õ°×·û
+    {
+        GetNextChar();
+        next_char = LookPreChar();
+    }
+
+    lexeme_beginning_ = forward_;   // ×î¿ªÊ¼Á½Ö¸ÕëÖ¸ÏòÍ¬Ò»ÆğÊ¼Î»ÖÃ£¬Ã¿¶ÁÈëÒ»¸ö×Ö·û£¬forward++£¬forward-beginning¼´Îª´ÊËØµÄ³¤¶È
+
+    // ¼ÇÂ¼·¢ÉúÎ´´¦ÀíÊÇµÄĞĞÁĞÖµ
+    size_t column = column_no_, lineno = line_no_;
+
+    if (next_char == EOF)
+    {
+        token.type = "EOF";
+        token.content = "EOF";
+        token.column = column;
+        token.line  = lineno;
+
+        return token;
+    }
+
+    if (next_char == '/')  // ×¢ÊÍ
+    {
+        GetNextChar();  // ½«'/'¶ÁÈë£¬È»ºóforwardÖ¸ÏòÁËµÚÒ»¸ö/ºóÃæ
+        next_char = LookPreChar();
+        if (next_char == '/')  // µ¥ĞĞ×¢ÊÍ
+        {
+            deal_success = DealSingleLineComment();
+            if (deal_success)
+            {
+                token.type = "NOTE";
+                token.column = column;
+                token.line  = lineno;
+            }
+            else
+            {
+                token.type = "ERROR";
+                std::stringstream ss;
+                ss << "Single-line error occurred at (line: " << lineno << ", column: " << column << ")";
+                token.content = ss.str();
+                token.column = column;
+                token.line  = lineno;
+            }
+        }
+        else if (next_char == '*') // ¶àĞĞ×¢ÊÍ
+        {
+            deal_success = DealMultiLineComment();
+            if (deal_success)
+            {
+                token.type = "NOTE";
+                token.column = column;
+                token.line  = lineno;
+            }
+            else
+            {
+                token.type = "ERROR";
+                std::stringstream ss;
+                ss << "Multiple-line error occurred at (line: " << lineno << ", column: " << column << ")";
+                token.content = ss.str();
+                token.column = column;
+                token.line  = lineno;
+            }
+        }
+        else    // ·ñÔò¾Íµ±×÷Ò»¸öµ¥¶ÀµÄ / ºÅ£¬³ıºÅ
+        {
+            deal_success = true;
+            token.type = "OOP";
+            token.content = GetMorpheme();
+            token.column = column;
+            token.line  = lineno;
+        }
+    }
+
+    else if (next_char == '\'') // µ¥×Ö·û
+    {
+        deal_success = DealChar();
+        if (deal_success)
+        {
+            token.type = "CCONST";
+            token.content = GetMorpheme();
+            token.column = column;
+            token.line  = lineno;
+        }
+        else
+        {
+            token.type = "ERROR";
+            std::stringstream ss;
+            ss << "Single quotation marks error occurred at (line: " << lineno << ", column: " << column << ")";
+            token.content = ss.str();
+            token.column = column;
+            token.line  = lineno;
+        }
+    }
+    else if (next_char == '"')  // ×Ö·û´®
+    {
+        deal_success = DealString();
+        if (deal_success)
+        {
+            token.type = "SCONST";
+            token.content = GetMorpheme();
+            token.column = column;
+            token.line  = lineno;
+        }
+        else
+        {
+            token.type = "ERROR";
+            std::stringstream ss;
+            ss << "Double quotation marks error occurred at (line: " << lineno << ", column: " << column << ")";
+            token.content = ss.str();
+            token.column = column;
+            token.line  = lineno;
+        }
+    }
+
+    else if (IsLetter(next_char))   // letter¿ªÍ·¼´Îª±êÊ¶·û»ò¹Ø¼ü×Ö
+    {
+        deal_success = DFADriver(identifier_dfa_);
+        if (deal_success)
+        {
+            std::string content = GetMorpheme();
+            if (Util::keyword_list_.find(content) != Util::keyword_list_.end())
+                token.type = "RESERVED";
+            else
+                token.type = "ID";
+            token.content = GetMorpheme();
+            token.column = column;
+            token.line  = lineno;
+        }
+        else
+        {
+            token.type = "ERROR";
+            std::stringstream ss;
+            ss << "Identifier error occurred at (line: " << lineno << ", column: " << column << ")";
+            token.content = ss.str();
+            token.column = column;
+            token.line  = lineno;
+        }
+    }
+
+    else if (isdigit(next_char))
+    {
+        if (next_char == '0')  // 8½øÖÆ»ò16½øÖÆ»ò¸¡µãÊı
+        {
+            GetNextChar();
+            // ÔÙ³¬Ç°¶ÁÈ¡Ò»Î»£¬¶ÁÍêºó»Ø¹ö£¬ÒòÎª×´Ì¬»ú´Ó³õÌ¬¿ªÊ¼ÔËĞĞ
+            next_char = LookPreChar();
+            RollBack();
+            if (next_char == 'x' || next_char == 'X') // Ê®Áù½øÖÆ
+                deal_success = DFADriver(hex_dfa_);
+            else if (next_char == 'b' || next_char == 'B')
+            {
+                forward_ = lexeme_beginning_;
+                deal_success = DFADriver(bin_dfa_);
+            }
+            else    // 8½øÖÆ»ò¸¡µãÊı
+            {
+                // ÏÈ°´ÕÕ¸¡µãÊı´¦Àí£¬Èç¹ûÆ¥Åä¸¡µãÊıÊ§°Ü£¬ÔòÎª°Ë½øÖÆÊı
+                deal_success = DFADriver(float_dfa_);
+                if (!deal_success)
+                {
+                    forward_ = lexeme_beginning_;
+                    deal_success = DFADriver(oct_dfa_);
+                }
+            }
+        }
+        else    // 10½øÖÆ»ò¸¡µãÊı
+        {
+            // ÏÈ°´ÕÕ¸¡µãÊı´¦Àí£¬Èç¹ûÆ¥Åä¸¡µãÊıÊ§°Ü£¬ÔòÎªÊ®½øÖÆÊı
+            deal_success = DFADriver(float_dfa_);
+            if (!deal_success)
+            {
+                forward_ = lexeme_beginning_;
+                deal_success = DFADriver(decimal_dfa_);
+            }
+        }
+
+        if (deal_success)
+        {
+            token.type = "NUM";
+            token.content = GetMorpheme();
+            token.column = column;
+            token.line  = lineno;
+        }
+        else
+        {
+            token.type = "ERROR";
+            std::stringstream ss;
+            ss << "Number error occurred at (line: " << lineno << ", column: " << column << ")";
+            token.content = ss.str();
+            token.column = column;
+            token.line  = lineno;
+        }
+    }
+
+    else    // ÆäÓàµÄ¶¼»á×ßµ½ÕâÀï
+    {
+        std::string op;
+        deal_success = DFADriver(operator_dfa_);
+        if (deal_success)
+        {
+            op = GetMorpheme();
+            // BOP ²¼¶û²Ù×÷·û: &&  ||
+            // COP ±È½Ï²Ù×÷·û: <	<=  >	>=	==	!=
+            // AOP ¸³Öµ²Ù×÷·û: =   +=  -=  *=  /=  %=
+            // OOP ÔËËã²Ù×÷·û: +	-	*	/   %     &   |
+            // EOP ¾äÄ©²Ù×÷·û: ;
+            // SOP ½á¹¹·Ö¸ô·û: (	)	,	[	]	{	}
+            if (Util::BOP.find(op) != Util::BOP.end())
+                token.type = "BOP";
+            if (Util::COP.find(op) != Util::COP.end())
+                token.type = "COP";
+            if (Util::AOP.find(op) != Util::AOP.end())
+                token.type = "AOP";
+            if (Util::OOP.find(op) != Util::OOP.end())
+                token.type = "OOP";
+            if (Util::EOP.find(op) != Util::EOP.end())
+                token.type = "EOP";
+            if (Util::SOP.find(op) != Util::SOP.end())
+                token.type = "SOP";
+
+            token.content = GetMorpheme();
+            token.column = column;
+            token.line  = lineno;
+        }
+        else
+        {
+            token.type = "ERROR";
+            std::stringstream ss;
+            ss << "Symbol error occurred at (line: " << lineno << ", column: " << column << ")";
+            token.content = ss.str();
+            token.column = column;
+            token.line  = lineno;
+        }
+    }
+
+    // ´íÎó´¦Àí
+    if (!deal_success)
+        DealError();
+
+    return token;
+}
+
+char Lexer::LookPreChar()
+{
+    if (forward_ == BUFLEN - 1 || forward_ == 2*BUFLEN - 1)
+        return (char)in_.peek();
+    else
+        return line_buffer_[forward_];
+}
+
+/*!
+ * Ë«»º³åÇø
  * @return
  */
 char Lexer::GetNextChar()
@@ -78,28 +397,39 @@ char Lexer::GetNextChar()
         case EOF:
             if (forward_ == BUFLEN - 1)
             {
-                // é‡è½½ç¬¬äºŒä¸ªç¼“å†²åŒº
+                // ÖØÔØµÚ¶ş¸ö»º³åÇø
                 in_.read((char *)(line_buffer_ + BUFLEN), BUFLEN - 1);
                 line_buffer_[BUFLEN + in_.gcount()] = EOF;
                 forward_ = BUFLEN;
             }
             else if (forward_ == 2 * BUFLEN - 1)
             {
-                // é‡è½½ç¬¬ä¸€ä¸ªç¼“å†²åŒº
+                // ÖØÔØµÚÒ»¸ö»º³åÇø
                 in_.read((char *)(line_buffer_), BUFLEN - 1);
                 line_buffer_[in_.gcount()] = EOF;
                 forward_ = 0;
             }
             else
             {
-                // ç¼“å†²åŒºå†…éƒ¨çš„ EOFï¼Œæ ‡è®°è¾“å…¥ç»“æŸ
-                // ç»ˆæ­¢è¯æ³•åˆ†æ
-                break;
+                // »º³åÇøÄÚ²¿µÄ EOF£¬±ê¼ÇÊäÈë½áÊø
+                // ÖÕÖ¹´Ê·¨·ÖÎö
+                return EOF;
             }
-        //case å…¶å®ƒå­—ç¬¦æƒ…å†µ
+        //case ÆäËü×Ö·ûÇé¿ö
+        default:
+        {
+
+        }
     }
 
-    return line_buffer_[forward_++];
+    // ´¦ÀíĞĞºÅÁĞºÅ
+    char ch = line_buffer_[forward_++];
+    if (IsBlankChar(ch))
+        DealBlankChar(ch);
+    else
+        column_no_++;
+
+    return ch;
 }
 
 std::string Lexer::GetMorpheme()
@@ -132,21 +462,240 @@ std::string Lexer::GetMorpheme()
         }
     }
 
+
     return morpheme;
+}
+
+/*!
+ * ÅĞ¶ÏÊÇ·ñÊÇ¿Õ°××Ö·û
+ * @param ch - ÒªÅĞ¶ÏµÄ×Ö·û
+ * @return - ÊÇ¿Õ°××Ö·û·µ»Øtrue£¬·ñÔòfalse
+ */
+bool Lexer::IsBlankChar(char ch)
+{
+    switch (ch)
+    {
+        case ' ':
+        case '\t':
+        case '\r':
+        case '\n':
+            return true;
+        default:
+            return false;
+    }
+}
+
+/*!
+ * ÅĞ¶Ïµ±Ç°×Ö·ûÊÇ·ñÊÇ×ÖÄ¸»ò_
+ * @param ch - ÒªÅĞ¶ÏµÄ×Ö·û
+ * @return - Èç¹ûÊÇ×ÖÄ¸»ò_·µ»Øtrue£¬·ñÔòfalse
+ */
+bool Lexer::IsLetter(char ch)
+{
+    return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch == '_');
+}
+
+/*!
+ * DFA±íÇı¶¯³ÌĞò
+ * Á÷³Ì£º
+ * 1. ÅĞ¶Ïµ±Ç°×´Ì¬ÊÇ·ñÎª½ÓÊÕÌ¬
+ *  * ½ÓÊÕÌ¬£ºÇå¿ÕÕ»ÔÙÑ¹Èëµ±Ç°×´Ì¬
+ *  * ·Ç½ÓÊÕÌ¬£ºÖ±½ÓÑ¹Èëµ±Ç°×´Ì¬
+ * 2. ×ö×ªÒÆ
+ * @param dfa - ¶ÔÓ¦×´Ì¬×ª»»Í¼µÄdfa
+ * @return - ÖÁÉÙµ½´ïÒ»¸öÖÕÌ¬ÔòÆ¥Åä³É¹¦£¬·ñÔòÆ¥ÅäÊ§°Ü
+ */
+bool Lexer::DFADriver(const DFA& dfa)
+{
+    State start_state = dfa.GetStartState();    // ¿ªÊ¼×´Ì¬
+    std::set<State> end_state_set = dfa.GetEndStateSet();    // ½áÊø×´Ì¬¼¯
+    std::map<State, std::map<char, State>> dfa_table = dfa.GetDFATable();  // ×´Ì¬×ª»»Í¼¶ÔÓ¦µÄ×´Ì¬×ª»»±í
+
+    State state = start_state;
+    std::stack<State> state_stack;  // ÊµÏÖ×îÔ¶Æ¥Åä
+
+    char ch;
+    while (state != 99999999)  // µ±Ç°×´Ì¬²»Îª³ö´í×´Ì¬
+    {
+        // µ±Ç°×´Ì¬Îª½ÓÊÕ×´Ì¬ÔòÇå¿Õ×´Ì¬Õ»
+        if (end_state_set.find(state) != end_state_set.end())
+            while (!state_stack.empty()) state_stack.pop();
+        state_stack.push(state);
+
+        ch = GetNextChar();
+        if (dfa_table[state].find(ch) == dfa_table[state].end())    // ³ö´í×´Ì¬£¬µ±Ç°×´Ì¬²»ÄÜ½ÓÊÕ¸Ã·ûºÅ
+            state = 99999999;
+        else
+            state = dfa_table[state].at(ch);
+    }
+
+    // µ±Ç°×´Ì¬²»Îª½ÓÊÕ×´Ì¬
+    while (!state_stack.empty() && end_state_set.find(state) == end_state_set.end())
+    {
+        state = state_stack.top();
+        state_stack.pop();
+        RollBack();
+    }
+
+    // Èç¹û½ÓÊÕEOFµ¼ÖÂµ±Ç°×´Ì¬Îª³ö´í×´Ì¬£¬Ôò»á¶à»Ø¹öÒ»´Î£¬ĞèÒªÊÇforwardÇ°½ø
+    if (ch == EOF)
+        GetNextChar();
+
+    // Èç¹ûÈ¡ÍêÁËÕ»ÄÚµÄÔªËØ¶¼Ã»ÕÒµ½ÖÕÌ¬£¬Ôòµ±Ç°dfa²»ÄÜÆ¥Åä
+    if (state_stack.empty() && end_state_set.find(state) == end_state_set.end())
+        return false;
+    else
+        return true;
+    // ÏÖÔÚlexeme_beginningÖ¸Ïò´ÊËØ¿ªÍ·£¬forwardÖ¸Ïò´ÊËØ½áÎ²£¨´ÊËØ×îºóÒ»¸öÔªËØ£©
+}
+
+bool Lexer::DealSingleLineComment()
+{
+    // ´¦Àíµ¥ĞĞ×¢ÊÍ²»¿ÉÄÜ³ö´í
+
+    GetNextChar();  // ´ËÊ±forwardÖ¸Ïò//ºóÒ»¸ö×Ö·û
+    char ch = GetNextChar();
+
+    while (ch != '\n' && ch != EOF)
+        ch = GetNextChar();
+
+    if (ch == EOF)
+    {
+        // Ê²Ã´¶¼²»ĞèÒª×ö
+    }
+
+    return true;
+}
+
+bool Lexer::DealMultiLineComment()
+{
+    GetNextChar();  // Ö´ĞĞºóforwardÖ¸Ïò/*ºóÒ»¸ö·ûºÅ
+
+    char cur, pre;
+
+    do {
+        cur = GetNextChar();  // Ò»¸ö×Ö·ûÒ»¸ö×Ö·ûµÄ±éÀú£¬Èç¹ûÖ¸ÏòEOFÔòÎÄ¼ş½áÊø
+
+        pre = LookPreChar();
+
+        if (cur == EOF)
+        {
+            // ³ö´í£¬¶àĞĞ×¢ÊÍ³ö´í½ö½ö¿ÉÄÜÊÇÃ»ÓĞÕÒµ½¶ÔÓ¦µÄÓÒ²¿
+            return false;
+        }
+    } while (!(cur == '*' && pre == '/'));
+    GetNextChar();
+
+    return true;
+}
+
+bool Lexer::DealChar()
+{
+    GetNextChar();
+    char cur = GetNextChar();
+    char pre = GetNextChar();
+
+    // char ch = ''; ¿Õµ¥×Ö·û²»´æÔÚ£¬ÊÇ´íÎóµÄ£¬'EOFÒ²¿´¿ÉÒÔÅĞ¶Ï´¦Àí
+    if (cur != '\'' && pre == '\'')
+    {
+        return true;
+    }
+
+    return false;
+}
+
+bool Lexer::DealString()
+{
+    GetNextChar();
+    char cur = GetNextChar();
+
+    // std::string s = ""; ¿Õ´®´æÔÚ£¬ÊÇÕıÈ·µÄ£¬'EOFÒ²¿´¿ÉÒÔÅĞ¶Ï´¦Àí
+    while (cur != '"')
+    {
+        cur = GetNextChar();    // Ò»¸öÒ»¸ö×Ö·ûÒÆ¶¯
+
+        if (cur == EOF)
+            return false;
+    }
+
+    return true;
+}
+
+bool Lexer::DealBlankChar(char ch)
+{
+    switch (ch)
+    {
+        case ' ':
+            column_no_++;
+            break;
+        case '\t':
+            column_no_ += 4;
+            break;
+        case '\r':
+        case '\n':
+            last_column_no_ = column_no_;
+            column_no_ = 1;
+            line_no_++;
+            break;
+        default:
+            return false;
+    }
+    return true;
 }
 
 void Lexer::RollBack()
 {
-    // TODO: å®Œå–„å›é€€æ“ä½œ
+    // TODO: ÍêÉÆ»ØÍË²Ù×÷
     /*
-     * åœ¨åŒç¼“å†²åŒºè¯æ³•åˆ†æå™¨ä¸­ï¼Œè¿›è¡Œå›é€€æ“ä½œåï¼Œä¸‹ä¸€æ¬¡è¯»å–æ–‡ä»¶æ—¶ï¼Œä¸‹åŠç¼“å†²åŒºçš„å†…å®¹å¯èƒ½ä¼šè¢«è¦†ç›–æ‰ã€‚è¿™æ˜¯å› ä¸ºåœ¨åŒç¼“å†²åŒºå®ç°ä¸­ï¼Œæˆ‘ä»¬ä¼šåœ¨æ¯ä¸ªç¼“å†²åŒºçš„æœ«å°¾è¯»å–æ–°çš„å­—ç¬¦ã€‚
-     * å½“éœ€è¦åŠ è½½æ–°æ•°æ®æ—¶ï¼Œæˆ‘ä»¬è¦ç¡®ä¿å›é€€æ“ä½œä¸ä¼šå¯¼è‡´æ•°æ®ä¸¢å¤±ã€‚ä¸ºæ­¤ï¼Œå¯ä»¥é‡‡å–ä»¥ä¸‹ç­–ç•¥ï¼š
-     * 1. åœ¨éœ€è¦å›é€€æ—¶ï¼Œå…ˆæ£€æŸ¥å½“å‰å›é€€æ“ä½œæ˜¯å¦ä¼šå¯¼è‡´æ•°æ®ä¸¢å¤±ã€‚å¦‚æœå›é€€æ“ä½œä»…æ¶‰åŠå½“å‰ç¼“å†²åŒºï¼Œä¸ä¼šå¯¼è‡´æ•°æ®ä¸¢å¤±ï¼Œé‚£ä¹ˆå¯ä»¥æ”¾å¿ƒè¿›è¡Œå›é€€ã€‚
-     * 2. å¦‚æœå›é€€æ“ä½œæ¶‰åŠåˆ°è·¨ç¼“å†²åŒºï¼Œéœ€è¦æ ¼å¤–å°å¿ƒã€‚åœ¨è¿™ç§æƒ…å†µä¸‹ï¼Œå¯ä»¥åœ¨å›é€€æ“ä½œä¹‹å‰ä¿å­˜å½“å‰forwardæŒ‡é’ˆçš„ä½ç½®ã€‚
-     *    å½“ä¸‹æ¬¡éœ€è¦åŠ è½½æ–°æ•°æ®æ—¶ï¼Œå¯ä»¥å°†æ–°æ•°æ®åŠ è½½åˆ°å¦ä¸€ä¸ªç¼“å†²åŒºï¼ˆéå½“å‰çš„ç¼“å†²åŒºï¼‰ï¼Œå¹¶æ ¹æ®ä¿å­˜çš„forwardæŒ‡é’ˆä½ç½®è¿›è¡Œè¯»å–ã€‚è¿™æ ·ï¼Œå›é€€æ“ä½œä¸ä¼šå¯¼è‡´æ•°æ®ä¸¢å¤±ã€‚
-     * 3. å¦‚æœå›é€€æ“ä½œéœ€è¦è·¨è¶Šå¤šä¸ªç¼“å†²åŒºè¾¹ç•Œï¼Œé‚£ä¹ˆå¯èƒ½éœ€è¦è€ƒè™‘ä½¿ç”¨æ›´å¤§çš„ç¼“å†²åŒºæˆ–å…¶ä»–ç¼“å†²ç­–ç•¥ï¼Œä¾‹å¦‚å¾ªç¯ç¼“å†²åŒºã€‚
-     * è¯·æ³¨æ„ï¼Œè¿™äº›ç­–ç•¥å¯èƒ½ä¼šå¢åŠ è¯æ³•åˆ†æå™¨çš„å®ç°å¤æ‚æ€§ã€‚åœ¨å®é™…åº”ç”¨ä¸­ï¼Œå¯ä»¥æ ¹æ®å…·ä½“éœ€æ±‚å’Œåœºæ™¯é€‰æ‹©åˆé€‚çš„ç­–ç•¥ã€‚
-     * å¦å¤–ï¼Œå¯¹äºå¤§å¤šæ•°è¯­è¨€ï¼Œå›é€€æ“ä½œé€šå¸¸ä»…æ¶‰åŠå°‘é‡å­—ç¬¦ï¼Œå› æ­¤ä¸å¤ªå¯èƒ½å‡ºç°å›é€€æ“ä½œå¯¼è‡´å¤§é‡æ•°æ®ä¸¢å¤±çš„é—®é¢˜ã€‚
+     * ÔÚË«»º³åÇø´Ê·¨·ÖÎöÆ÷ÖĞ£¬½øĞĞ»ØÍË²Ù×÷ºó£¬ÏÂÒ»´Î¶ÁÈ¡ÎÄ¼şÊ±£¬ÏÂ°ë»º³åÇøµÄÄÚÈİ¿ÉÄÜ»á±»¸²¸Çµô¡£ÕâÊÇÒòÎªÔÚË«»º³åÇøÊµÏÖÖĞ£¬ÎÒÃÇ»áÔÚÃ¿¸ö»º³åÇøµÄÄ©Î²¶ÁÈ¡ĞÂµÄ×Ö·û¡£
+     * µ±ĞèÒª¼ÓÔØĞÂÊı¾İÊ±£¬ÎÒÃÇÒªÈ·±£»ØÍË²Ù×÷²»»áµ¼ÖÂÊı¾İ¶ªÊ§¡£Îª´Ë£¬¿ÉÒÔ²ÉÈ¡ÒÔÏÂ²ßÂÔ£º
+     * 1. ÔÚĞèÒª»ØÍËÊ±£¬ÏÈ¼ì²éµ±Ç°»ØÍË²Ù×÷ÊÇ·ñ»áµ¼ÖÂÊı¾İ¶ªÊ§¡£Èç¹û»ØÍË²Ù×÷½öÉæ¼°µ±Ç°»º³åÇø£¬²»»áµ¼ÖÂÊı¾İ¶ªÊ§£¬ÄÇÃ´¿ÉÒÔ·ÅĞÄ½øĞĞ»ØÍË¡£
+     * 2. Èç¹û»ØÍË²Ù×÷Éæ¼°µ½¿ç»º³åÇø£¬ĞèÒª¸ñÍâĞ¡ĞÄ¡£ÔÚÕâÖÖÇé¿öÏÂ£¬¿ÉÒÔÔÚ»ØÍË²Ù×÷Ö®Ç°±£´æµ±Ç°forwardÖ¸ÕëµÄÎ»ÖÃ¡£
+     *    µ±ÏÂ´ÎĞèÒª¼ÓÔØĞÂÊı¾İÊ±£¬¿ÉÒÔ½«ĞÂÊı¾İ¼ÓÔØµ½ÁíÒ»¸ö»º³åÇø£¨·Çµ±Ç°µÄ»º³åÇø£©£¬²¢¸ù¾İ±£´æµÄforwardÖ¸ÕëÎ»ÖÃ½øĞĞ¶ÁÈ¡¡£ÕâÑù£¬»ØÍË²Ù×÷²»»áµ¼ÖÂÊı¾İ¶ªÊ§¡£
+     * 3. Èç¹û»ØÍË²Ù×÷ĞèÒª¿çÔ½¶à¸ö»º³åÇø±ß½ç£¬ÄÇÃ´¿ÉÄÜĞèÒª¿¼ÂÇÊ¹ÓÃ¸ü´óµÄ»º³åÇø»òÆäËû»º³å²ßÂÔ£¬ÀıÈçÑ­»·»º³åÇø¡£
+     * Çë×¢Òâ£¬ÕâĞ©²ßÂÔ¿ÉÄÜ»áÔö¼Ó´Ê·¨·ÖÎöÆ÷µÄÊµÏÖ¸´ÔÓĞÔ¡£ÔÚÊµ¼ÊÓ¦ÓÃÖĞ£¬¿ÉÒÔ¸ù¾İ¾ßÌåĞèÇóºÍ³¡¾°Ñ¡ÔñºÏÊÊµÄ²ßÂÔ¡£
+     * ÁíÍâ£¬¶ÔÓÚ´ó¶àÊıÓïÑÔ£¬»ØÍË²Ù×÷Í¨³£½öÉæ¼°ÉÙÁ¿×Ö·û£¬Òò´Ë²»Ì«¿ÉÄÜ³öÏÖ»ØÍË²Ù×÷µ¼ÖÂ´óÁ¿Êı¾İ¶ªÊ§µÄÎÊÌâ¡£
      */
-    --forward_;
+    forward_--;
+
+    // ´¦ÀíĞĞÁĞ×ø±ê
+    char ch = line_buffer_[forward_];
+    switch (ch)
+    {
+        case ' ':
+            column_no_--;
+            break;
+        case '\t':
+            column_no_ -= 4;
+            break;
+        case '\r':
+        case '\n':
+            // ´ÓÏÂÒ»ĞĞ¿ªÍ·ÒÆ»ØÉÏÒ»ĞĞÄ©Î²ÈçºÎÍê³É£¿
+            // ÕâËµÃ÷µÚÒ»ĞĞÄ©Î²ºÍµÚ¶şĞĞ¿ªÍ·±»»»ĞĞËù·Ö¸î¿ªÀ´ÁË£¬¶øÒ»¸ötoken×îÔçÊÇ´ÓÒ»ĞĞµÄÍ·²¿¶ÁÈ¡£¬×îÍíµ½Ò»ĞĞµÄÎ²²¿½áÊø
+            // ±ÈÈç½ÓÊÕ»»ĞĞºóÁ¢¼´³ö´í£¬ÔòĞèÒª½«column_no_¸ÄÎªÉÏ´ÎµÄcolumn_no_
+            column_no_ = last_column_no_;
+            line_no_--;
+            break;
+        default:
+            column_no_--;
+    }
 }
+
+/*!
+ * Ò»¸ö¼òµ¥µÄ´íÎó´¦Àí³ÌĞò£ºÆä»úÖÆÎª·¢Éú´íÎóÔò½«forwardÖ¸ÕëÒÆÏò´íÎóºó³öÏÖµÄµÚÒ»¸ö¿Õ°××Ö·û´¦
+ */
+void Lexer::DealError()
+{
+    // TODO: forwardºÍlexeme_beginning²»ÔÚÍ¬Ò»²¿·Ö»º³åÇøÈçºÎ½â¾ö£¿
+
+    // ´ÓÖ¸Õëlexeme_beginning¿ªÊ¼ÒÆ¶¯£¬¼´½«forward_Ö¸ÕëµÄÖµÉèÖÃÎªlexeme_beginning
+    forward_ = lexeme_beginning_;
+
+    // ¶ÁÈ¡×Ö·û£¬Ö±µ½Óöµ½¿Õ°×·ûºÅ
+    char ch;
+    do
+    {
+        ch = GetNextChar();
+    } while (!IsBlankChar(ch) && ch != EOF);
+}
+

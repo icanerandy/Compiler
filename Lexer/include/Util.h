@@ -17,8 +17,14 @@
 
 class Util
 {
-private:
+public:
     static std::unordered_map<std::string, int> keyword_list_;
+    static std::unordered_map<std::string, int> BOP;
+    static std::unordered_map<std::string, int> COP;
+    static std::unordered_map<std::string, int> AOP;
+    static std::unordered_map<std::string, int> OOP;
+    static std::unordered_map<std::string, int> EOP;
+    static std::unordered_map<std::string, int> SOP;
 };
 
 

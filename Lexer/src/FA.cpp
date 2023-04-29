@@ -13,13 +13,34 @@
 #include <utility>
 #include <map>
 
+FA::FA()
+= default;
+
 FA::FA(std::string regex)
 {
     for (size_t i = 0; i < regex.size(); ++i)
     {
         if (regex.at(i) == '\\')
         {
-            regex_.emplace_back(regex.at(++i), false);
+            char ch = regex.at(i+1);
+            switch (ch) {
+                case '\\': regex_.emplace_back('\\', false); break;
+                case 's': regex_.emplace_back(' ', false); break;
+                case 'n': regex_.emplace_back('\n', false); break;
+                case 't': regex_.emplace_back('\t', false); break;
+                case 'r': regex_.emplace_back('\r', false); break;
+                case '|': regex_.emplace_back('|', false); break;
+                case '*': regex_.emplace_back('*', false); break;
+                case '+': regex_.emplace_back('+', false); break;
+                case '(': regex_.emplace_back('(', false); break;
+                case ')': regex_.emplace_back(')', false); break;
+                    // 其他转义字符也可以在这里处理，如\'、\"、\r等
+                default:
+                    // 如果不是有效的转义字符，则将原字符保留
+                    std::cerr << "正则表达式错误：非有效转移字符！" << " \\" << ch << std::endl;
+                    exit(-1);
+            }
+            i++;
         }
         else if (regex.at(i) == '|' || regex.at(i) == '*' || regex.at(i) == '+' || regex.at(i) == '(' || regex.at(i) == ')')
         {
@@ -159,9 +180,8 @@ void FA::PostFix()
 {
     std::stack<RegexSymbol> op;
     std::vector<RegexSymbol> suffix;
-    for (size_t i = 0; i < regex_.size(); ++i)
+    for (auto symbol : regex_)
     {
-        RegexSymbol symbol = regex_.at(i);
         if (symbol.second && symbol.first != '(' && symbol.first != ')')
         {//是运算符
             if (op.empty())//栈空，直接入栈
@@ -248,7 +268,7 @@ int FA::GetPriority(RegexSymbol symbol)
     return level;
 }
 
-bool FA::Judge(const std::string& str)
+DFA FA::GetDFA()
 {
-    return dfa_.Judge(str);
+    return dfa_;
 }

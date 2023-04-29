@@ -20,8 +20,11 @@ using RegexSymbol = std::pair<char, RegexType>;
 class FA
 {
 public:
+    explicit FA();
     explicit FA(std::string regex);
-    bool Judge(const std::string& str);
+
+public:
+    DFA GetDFA();
 
 private:
     bool CheckLegal();
@@ -29,8 +32,8 @@ private:
     bool CheckParenthesis();
     void AddJoinSymbol();
     void PostFix();
-    bool IsOperator(char c);
-    int GetPriority(RegexSymbol symbol);
+    static bool IsOperator(char c);
+    static int GetPriority(RegexSymbol symbol);
 
 private:
     std::vector<RegexSymbol> regex_;

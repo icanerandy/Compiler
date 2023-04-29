@@ -24,6 +24,9 @@ public:
 public:
     void Display();
     bool Judge(const std::string& str);
+    State GetStartState() const;    // 获取开始状态
+    std::set<State> GetEndStateSet() const;    // 获取结束状态集
+    std::map<State, std::map<char, State>> GetDFATable() const;   // 获取状态转换表
 
 private:    // NFA-DFA
     void NFA2DFA();
@@ -49,7 +52,7 @@ private:
     std::set<State> end_state_;    // 结束状态集
     std::set<char> symbol_set_;  // 可接收符号集
 
-private:
+public:
     std::map<State, std::map<char, State>> dfa_table_;  // 状态转换图对应的状态转换表
 
 private:

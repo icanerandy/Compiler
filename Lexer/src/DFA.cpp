@@ -386,9 +386,25 @@ bool DFA::Judge(const std::string& str)
     State state = start_state_;
     for (const auto& ch : str)
     {
+
         state = dfa_table_[state][ch];
     }
     if (end_state_.find(state) == end_state_.end())
         return false;
     return true;
+}
+
+State DFA::GetStartState() const
+{
+    return start_state_;
+}
+
+std::set<State> DFA::GetEndStateSet() const
+{
+    return end_state_;
+}
+
+std::map<State, std::map<char, State>> DFA::GetDFATable() const
+{
+    return dfa_table_;
 }

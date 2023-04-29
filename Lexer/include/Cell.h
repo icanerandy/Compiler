@@ -37,6 +37,11 @@ struct State
         return value == other.value;
     }
 
+    bool operator!=(int i) const
+    {
+        return value != i;
+    }
+
     bool operator<(const State& other) const
     {
         return value < other.value;
