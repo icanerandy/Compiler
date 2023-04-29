@@ -48,12 +48,23 @@ void Lexer::Init(const std::string &input_file, const std::string& output_file)
 
 void Lexer::Tokenize()
 {
+    line_no_ = 1;
+    column_ = 1;
 
+    Token token;
+    do
+    {
+        token = Gettoken();
+    } while (token.type != "EOF");
+
+    std::cout << "词法分析完成！" << std::endl;
 }
 
 Token Lexer::Gettoken()
 {
-    return Token();
+    char ch = GetNextChar();
+
+
 }
 
 /*!

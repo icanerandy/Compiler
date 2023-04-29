@@ -51,8 +51,8 @@ private:
 
 private:
     size_t line_no_, column_;  // 行号, 列号
-    size_t lexeme_beginning_;   // 开始指针
-    size_t forward_;     // 向前指针
+    size_t lexeme_beginning_{};   // 开始指针
+    size_t forward_{};     // 向前指针
     std::ifstream in_;    // 输入流
     std::ofstream out_;   // 输出流
 
