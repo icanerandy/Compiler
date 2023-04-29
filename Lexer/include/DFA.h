@@ -44,7 +44,7 @@ private:    // DFA最小化
     static size_t ToWhichSet(std::map<size_t, std::set<State>>& categories, State state);
     Cell CreateMFABySets(std::map<size_t, std::set<State>>& categories);
 
-private:
+public:
     std::set<Edge> edge_set_;
     size_t edge_count_{};  // 边数
     std::set<State> state_set_;

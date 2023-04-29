@@ -11,12 +11,62 @@
 #include "../include/FA.h"
 
 #include <utility>
-#include <map>
 
 FA::FA()
 = default;
 
-FA::FA(std::string regex)
+FA::FA(const std::string& FA_name)
+{
+    std::ifstream in(FA_name, std::ios::in);
+    if (!in.is_open())
+    {
+        std::cerr << "打开文件失败，无法读取状态表文件到dfa_table！" << std::endl;
+        exit(-1);
+    }
+
+    std::string line;
+
+    // 读取第一行的初态
+    std::getline(in, line);
+    State start(std::stoull(line, nullptr, 10));
+    dfa_.start_state_ = start;
+
+    // 读取第二行的终态集
+    std::getline(in, line);
+    std::string word;
+    std::stringstream end_set(line);
+    while (std::getline(end_set, word, ' '))
+    {
+        if (!word.empty())
+        {
+            State state(std::stoull(word, nullptr, 10));
+            dfa_.end_state_.emplace(state);
+        }
+    }
+
+    while (std::getline(in, line))
+    {
+        std::stringstream ss(line);
+
+        std::string from, symbol, to;
+
+        ss >> from;
+        ss >> symbol;
+        ss >> to;
+
+        State from_state(std::stoull(from, nullptr, 10));
+        char accept_symbol = symbol.at(0);
+        State to_state(std::stoull(to, nullptr, 10));
+
+        dfa_.dfa_table_[from_state][accept_symbol] = to_state;
+    }
+
+    in.close();
+}
+
+FA::FA(std::string FA_name, std::string regex)
+    :
+    FA_name_(std::move(FA_name))
 {
     for (size_t i = 0; i < regex.size(); ++i)
     {
@@ -59,6 +109,8 @@ FA::FA(std::string regex)
 
     nfa_ = NFA(regex_);
     dfa_ = DFA(nfa_);
+
+    OutputDFATable();   // 输出MFA表到文件中
 }
 
 /*!
@@ -271,4 +323,37 @@ int FA::GetPriority(RegexSymbol symbol)
 DFA FA::GetDFA()
 {
     return dfa_;
+}
+
+std::string FA::table_post_name_ = "_DFA_table";
+void FA::OutputDFATable()
+{
+    std::string filename = "../Lexer/DFATables/" + FA_name_ + table_post_name_;
+
+    std::ofstream out(filename, std::ios::out);
+    if (!out.is_open())
+    {
+        std::cerr << "打开文件失败，无法写入内容到DFA_table中！" << std::endl;
+        exit(-1);
+    }
+
+    // 第一行输出初态
+    out << dfa_.start_state_ << "\n";
+
+    // 第二行输出终态集合
+    for (const auto& end_state : dfa_.GetEndStateSet())
+        out << end_state << " ";
+    out << "\n";
+
+    // 输出：当前状态 接收符号 转移到状态
+    for (const auto& it1 : dfa_.dfa_table_)
+    {
+        for (const auto& it2 : it1.second)
+        {
+            out << it1.first << " " << it2.first << " " <<  it2.second << "\n";
+        }
+    }
+
+    out.flush();
+    out.close();
 }

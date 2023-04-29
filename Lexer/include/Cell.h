@@ -6,6 +6,7 @@
 #define COMPILER_CELL_H
 
 #include <iostream>
+#include <fstream>
 #include <set>
 #include <vector>
 #include <stack>
@@ -25,6 +26,12 @@ struct State
     }
 
     friend std::ostream& operator<<(std::ostream& out, const State& state)
+    {
+        out << state.value;
+        return out;
+    }
+
+    friend std::ofstream& operator<<(std::ofstream& out, const State& state)
     {
         out << state.value;
         return out;

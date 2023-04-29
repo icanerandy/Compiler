@@ -44,15 +44,14 @@ void Lexer::Init(const std::string &input_file, const std::string& output_file)
     lexeme_beginning_ = forward_ = 0;
 
     // 初始化各类状态机
-    std::map<std::string, std::string> regex_map = ReadRegex();
 
-    FA identifier_fa(regex_map.at("identifier"));
-    FA operator_fa(regex_map.at("operator"));
-    FA decimal_fa(regex_map.at("decimal"));
-    FA hex_fa(regex_map.at("hex"));
-    FA oct_fa(regex_map.at("oct"));
-    FA bin_fa(regex_map.at("bin"));
-    FA float_fa(regex_map.at("float"));
+    FA identifier_fa("../Lexer/DFATables/identifier_DFA_table");
+    FA operator_fa("../Lexer/DFATables/operator_DFA_table");
+    FA decimal_fa("../Lexer/DFATables/decimal_DFA_table");
+    FA hex_fa("../Lexer/DFATables/hex_DFA_table");
+    FA oct_fa("../Lexer/DFATables/oct_DFA_table");
+    FA bin_fa("../Lexer/DFATables/bin_DFA_table");
+    FA float_fa("../Lexer/DFATables/float_DFA_table");
 
     identifier_dfa_ = identifier_fa.GetDFA();
     operator_dfa_ = operator_fa.GetDFA();
@@ -61,46 +60,6 @@ void Lexer::Init(const std::string &input_file, const std::string& output_file)
     oct_dfa_ = oct_fa.GetDFA();
     bin_dfa_ = bin_fa.GetDFA();
     float_dfa_ = float_fa.GetDFA();
-}
-
-std::map<std::string, std::string> Lexer::ReadRegex()
-{
-    std::map<std::string, std::string> regex_map;
-
-    std::ifstream in(R"(D:\Project\CLion\Compiler\Lexer\regex.txt)", std::ios::in);
-    if (!in.is_open())
-    {
-        std::cerr << "读取文件失败！" << std::endl;
-        exit(-1);
-    }
-
-    std::string line;
-    while (std::getline(in, line))
-    {
-        std::stringstream ss(line);
-        std::string category;
-
-        ss >> category;
-        category.pop_back();
-        std::string regex_symbol;
-
-        regex_map[category].append("(");
-        while (ss >> regex_symbol)
-        {
-            if (regex_map.find(regex_symbol) != regex_map.end())
-            {
-                regex_map[category].append(regex_map.at(regex_symbol));
-            }
-            else
-            {
-                regex_map[category].append(regex_symbol);
-            }
-        }
-        regex_map[category].append(")");
-    }
-
-    in.close();
-    return regex_map;
 }
 
 void Lexer::Tokenize()
@@ -112,7 +71,7 @@ void Lexer::Tokenize()
     do
     {
         token = Gettoken();
-        std::cout <<  "(" << token.line << ":" << token.column << ")  " << "{" << token.content << ", " << token.type << "}" << std::endl;
+        std::cout <<  "(" << token.line << ":" << token.column << ")\t\t" << "{" << token.content << ", " << token.type << "}" << std::endl;
         if (token.type != "ERROR")
             tokens_.emplace_back(token);
     } while (token.type != "EOF");
