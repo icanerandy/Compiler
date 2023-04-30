@@ -45,14 +45,13 @@ public:
 
 private:
     void Init(const std::string& input_file, const std::string& output_file);
-    std::map<std::string, std::string> ReadRegex();
     void Tokenize();
     Token Gettoken();   // 获取一个token
     char LookPreChar(); // 查看下一个字符，不移动指针
     char GetNextChar(); // 获取下一个字符
 
 private:
-    bool DFADriver(const DFA& dfa);    // DFA驱动程序
+    bool DFADriver(DFA& dfa);    // DFA驱动程序
     void RollBack();    // 回退一个字符
     std::string GetMorpheme(); // 通过开始指针和向前指针获取词素
     static bool IsBlankChar(char ch); // 判断是否是空白字符
@@ -82,14 +81,16 @@ private:
 
 private:
     size_t line_no_, column_no_;  // 行号, 列号
-    size_t last_column_no_; // 记录换行前的列号（便于回溯）
+    size_t last_column_no_{}; // 记录换行前的列号（便于回溯）
     char line_buffer_[2*BUFLEN]{};  // 双缓冲区
     size_t lexeme_beginning_{};   // 开始指针
     size_t forward_{};     // 向前指针
+
+private:
     std::ifstream in_;    // 输入流
     std::ofstream out_;   // 输出流
 
-private:
+public:
     std::vector<Token> tokens_;
 
 };

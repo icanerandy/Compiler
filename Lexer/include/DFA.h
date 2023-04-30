@@ -26,7 +26,7 @@ public:
     bool Judge(const std::string& str);
     State GetStartState() const;    // 获取开始状态
     std::set<State> GetEndStateSet() const;    // 获取结束状态集
-    std::map<State, std::map<char, State>> GetDFATable() const;   // 获取状态转换表
+    std::map<State, std::map<char, State>>& GetDFATable();   // 获取状态转换表
 
 private:    // NFA-DFA
     void NFA2DFA();

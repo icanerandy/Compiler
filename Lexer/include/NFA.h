@@ -26,22 +26,22 @@ public:
     void Display() const;
 
 private:
-    Cell ExpressToNFA(const std::vector<RegexSymbol>& regex);    // 表达式转NFA
-    Cell DoCell(char ch);  // 处理 a
-    Cell DoUnit(const Cell& left, const Cell& right); // 处理 a|b
-    Cell DoJoin(Cell& left, Cell& right); // 处理 ab
-    Cell DoStar(const Cell& cell); // 处理 a*
+    Cell ExpressToNFA(const std::vector<RegexSymbol>& regex);
+    Cell DoCell(char ch);
+    Cell DoUnit(const Cell& left, const Cell& right);
+    Cell DoJoin(Cell& left, Cell& right);
+    Cell DoStar(const Cell& cell);
 
 private:
-    State NewStateNode();   // 产生一个新的状态节点，便于管理
+    State NewStateNode();
     static void CellEdgeSetCopy(Cell& des, const Cell& src);
 
 public:
     std::set<Edge> edge_set_;
-    size_t edge_count_{};  // 边数
-    State start_state_;    //  开始状态
-    State end_state_;    // 结束状态
-    std::set<char> symbol_set_;  // 可接收符号集
+    size_t edge_count_{};
+    State start_state_;
+    State end_state_;
+    std::set<char> symbol_set_;
 
 private:
     size_t state_num_{};  // 保证全局唯一性

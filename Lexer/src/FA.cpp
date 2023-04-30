@@ -190,18 +190,6 @@ bool FA::CheckParenthesis()
  */
 void FA::AddJoinSymbol()
 {
-/*  测试终止符\0
-	string check_string = "abcdefg\0aaa";
-	cout<<check_string<<endl;
-	int length = check_string.size();
-	char * check = new char[2*length];
-	strcpy(check,check_string.c_str());
-	cout<<check<<endl;
-	char *s = "ssss\0  aa";
-	cout<<s<<endl;
-	string a(s);
-	cout<<a<<endl;
-	*/
     size_t length = regex_.size();
 
     std::vector<RegexSymbol> new_regex; // 最多是两倍

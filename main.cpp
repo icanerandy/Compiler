@@ -1,32 +1,8 @@
 #include <iostream>
 #include <sstream>
-#include "include/Grammar.h"
-#include "include/LL1Parser.h"
-#include "Lexer/include/FA.h"
-#include "Lexer/include/Lexer.h"
-
-void GrammarTest()
-{
-    Grammar grammar(R"(D:\Project\CLion\Grammar\Grammar\GrammarRules\grammar.txt)", "<程序>");
-
-    // 构建 LL1Parser 对象
-    LL1Parser parser(grammar);
-
-    std::vector<std::string> tokens = {
-            "int",
-            "main",
-            "(",
-            ")",
-            "{",
-            "}"
-    };
-
-    if (parser.Parse(tokens)) {
-        std::cout << "Accepted." << std::endl;
-    } else {
-        std::cout << "Rejected." << std::endl;
-    }
-}
+#include "include/LR1Parser.h"
+#include "include/FA.h"
+#include "include/Lexer.h"
 
 std::map<std::string, std::string> ReadRegex()
 {
@@ -36,6 +12,7 @@ std::map<std::string, std::string> ReadRegex()
     if (!in.is_open())
     {
         std::cerr << "读取文件失败！" << std::endl;
+        system("pause");
         exit(-1);
     }
 
@@ -81,15 +58,13 @@ void InitFA()
     FA float_fa("float", regex_map.at("float"));
 }
 
-void LexerTest()
-{
-    Lexer lexer(R"(D:\Project\CLion\Compiler\Lexer\test.txt)",
-                R"(D:\Project\CLion\Compiler\Lexer\out.txt)");
-}
-
 int main() {
     // InitFA();
-    LexerTest();
+
+    Lexer lexer(R"(..\Lexer\test.txt)",
+                R"(..\Lexer\lexical_out.txt)");
+
+    LR1Parser lr1Parser(R"(..\Grammar\GrammarRules\testGrammar.txt)", R"(..\Grammar\grammar_out.txt)", R"(..\Grammar\lr1_parse_result.txt)");
 
     getchar();
     return 0;

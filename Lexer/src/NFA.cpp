@@ -152,6 +152,7 @@ Cell NFA::DoUnit(const Cell& left, const Cell& right)
 
 Cell NFA::DoJoin(Cell &left, Cell &right)
 {
+/*
     // 将left的结束状态和right的开始状态合并，将right的边复制给left，将left返回
     // 将right中所有以小型nfa的start_state开头的边全部修改
     for (auto it = right.edge_set.begin(); it != right.edge_set.end();)
@@ -182,6 +183,15 @@ Cell NFA::DoJoin(Cell &left, Cell &right)
             ++it;
         }
     }
+*/
+
+    // 多添加一条边，可以避免遍历成千上万条边
+    Edge new_edge{};
+    new_edge.start_state = left.end_state;
+    new_edge.end_state = right.start_state;
+    new_edge.trans_symbol = '#';
+
+    left.edge_set.emplace(new_edge);
 
     CellEdgeSetCopy(left, right);
 

@@ -72,11 +72,26 @@ void Lexer::Tokenize()
     {
         token = Gettoken();
         std::cout <<  "(" << token.line << ":" << token.column << ")\t\t" << "{" << token.content << ", " << token.type << "}" << std::endl;
-        if (token.type != "ERROR")
+        if (token.type != "ERROR" && token.type != "NOTE")
             tokens_.emplace_back(token);
     } while (token.type != "EOF");
 
+    for (auto it = tokens_.begin(); it != tokens_.end() - 1; ++it)
+    {
+        Token cur = *it;
+        Token pre = *(it + 1);
+        if (cur.type == "ID" && pre.content == "(")
+            it->type = "IDF";
+        if (cur.type == "ID" && pre.content == "=")
+            it->type = "ID1";
+
+        out_ <<  "(" << it->line << ":" << it->column << ")\t\t" << "{" << it->content << ", " << it->type << "}\n";
+    }
+    // 可以考虑输出EOF
+
     std::cout << "词法分析完成！" << std::endl;
+    out_.flush();
+    out_.close();
 }
 
 /*!
@@ -464,11 +479,11 @@ bool Lexer::IsLetter(char ch)
  * @param dfa - 对应状态转换图的dfa
  * @return - 至少到达一个终态则匹配成功，否则匹配失败
  */
-bool Lexer::DFADriver(const DFA& dfa)
+bool Lexer::DFADriver(DFA& dfa)
 {
     State start_state = dfa.GetStartState();    // 开始状态
     std::set<State> end_state_set = dfa.GetEndStateSet();    // 结束状态集
-    std::map<State, std::map<char, State>> dfa_table = dfa.GetDFATable();  // 状态转换图对应的状态转换表
+    std::map<State, std::map<char, State>>& dfa_table = dfa.GetDFATable();  // 状态转换图对应的状态转换表
 
     State state = start_state;
     std::stack<State> state_stack;  // 实现最远匹配

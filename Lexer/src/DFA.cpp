@@ -404,7 +404,7 @@ std::set<State> DFA::GetEndStateSet() const
     return end_state_;
 }
 
-std::map<State, std::map<char, State>> DFA::GetDFATable() const
+std::map<State, std::map<char, State>>& DFA::GetDFATable()
 {
     return dfa_table_;
 }
