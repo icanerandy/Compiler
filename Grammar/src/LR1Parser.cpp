@@ -88,48 +88,99 @@ void LR1Parser::InitGrammar()
     // 左部的都为非终结符
     for (const auto& prod : grammar_.prods)
         grammar_.N.emplace_back(prod.left);
+    // 去重
+    std::vector<std::string>::iterator it, it1;
+    for (it = ++grammar_.N.begin(); it != grammar_.N.end();)
+    {
+        it1 = find(grammar_.N.begin(), it, *it); //若当前位置之前存在重复元素，删除当前元素,erase返回当前元素的下一个元素指针
+        if (it1 != it)
+            it = grammar_.N.erase(it);
+        else
+            it++;
+    }
 
-    // 右部中没有在左部中出现过的符号都为终结符
+
+    // 右部中没有在左部中出现过的符号都为终结符，注意程序将ε当作终结符
     for (const auto& prod : grammar_.prods)
     {
         for (const auto& symbol : prod.right)
         {
             if (std::find(grammar_.N.begin(), grammar_.N.end(), symbol) == grammar_.N.end())
-                grammar_.T.emplace_back(symbol);
+                    grammar_.T.emplace_back(symbol);
         }
+    }
+    // 去重
+    for (it = ++grammar_.T.begin(); it != grammar_.T.end();)
+    {
+        it1 = find(grammar_.T.begin(), it, *it); //若当前位置之前存在重复元素，删除当前元素,erase返回当前元素的下一个元素指针
+        if (it1 != it)
+            it = grammar_.T.erase(it);
+        else
+            it++;
     }
 
     // 求FIRST集和FOLLOW集
+    GetFirstSet();
+    GetFollowSet();
 
     // 构建DFA和SLR1预测分析表
     DFA();
 
+    // 初始化action和goto表为空
+    InitAction();
+    InitGoto();
+
+    // 生成SLR1分析表
+    CreateAnalysisTable();
+}
+
+void LR1Parser::InitAction()
+{
+    for (size_t i = 0; i < canonicalCollection_.items.size(); ++i)
+    {
+        for (const auto & symbol : grammar_.T)
+        {
+            if (symbol != "<epsilon>")
+                action_[i][symbol] = std::make_pair("", -1);
+        }
+        // 不要忘了把结束符放进去
+        action_[i]["#"] = std::make_pair("", -1);
+    }
+}
+
+void LR1Parser::InitGoto()
+{
+    for (size_t i = 0; i < canonicalCollection_.items.size(); ++i)
+    {
+        for (const auto & symbol : grammar_.N)
+            goto_[i][symbol] = -1;
+    }
 }
 
 void LR1Parser::DFA()
 {
     // 构建初始项目集
-    LR0Item lr0Item;
-    lr0Item.location = 0;
-    lr0Item.prod.left = grammar_.prods[0].left;
-    lr0Item.prod.right = grammar_.prods[0].right;
-    LR0Items lr0Items;
-    lr0Items.items.emplace_back(lr0Item);
-    Closure(lr0Items);
+    LR1Item lr1Item;
+    lr1Item.location = 0;
+    lr1Item.prod.left = grammar_.prods[0].left;
+    lr1Item.prod.right = grammar_.prods[0].right;
+    LR1Items lr1Items;
+    lr1Items.items.emplace_back(lr1Item);
+    Closure(lr1Items);
 
     // 加入初始有效项目集
-    canonicalCollection_.items.emplace_back(lr0Items);
+    canonicalCollection_.items.emplace_back(lr1Items);
     // 将新加入的有效项目集加入待扩展队列中
-    Q.emplace(lr0Items, 0);
+    Q.emplace(lr1Items, 0);
 
     while (!Q.empty())
     {
-        LR0Items& from = Q.front().first;
+        LR1Items& from = Q.front().first;
         size_t sidx = Q.front().second;
         // 遍历每个终结符
         for (auto & symbol : grammar_.T)
         {
-            LR0Items to;
+            LR1Items to;
             Go(from, symbol, to);
             size_t idx;
             // 若求出的项目集to不为空
@@ -156,7 +207,7 @@ void LR1Parser::DFA()
         // 遍历每个非终结符
         for (auto & symbol : grammar_.N)
         {
-            LR0Items to;
+            LR1Items to;
             Go(from, symbol, to);
             size_t idx;
             if (!to.items.empty())
@@ -180,29 +231,102 @@ void LR1Parser::DFA()
         Q.pop();
     }
 
-    // 移除DFA图中的重复元素
-    for (auto & it : canonicalCollection_.g)
-    {
-        std::set< std::pair<std::string, size_t> > tmp(it.begin(), it.end());
-        it.assign(tmp.begin(), tmp.end());
-    }
+//    // 移除DFA图中的重复元素
+//    for (auto & it : canonicalCollection_.g)
+//    {
+//        std::set< std::pair<std::string, size_t> > tmp(it.begin(), it.end());
+//        it.assign(tmp.begin(), tmp.end());
+//    }
 }
 
 void LR1Parser::CreateAnalysisTable()
 {
+    for (size_t i = 0; i < canonicalCollection_.items.size(); ++i)
+    {
+        LR1Items& LItems = canonicalCollection_.items.at(i);
 
+        // 构建action表
+        for (const auto & LItem : LItems.items)
+        {
+            // 非归约项目
+            if (LItem.location < LItem.prod.right.size() && LItem.prod.right.at(LItem.location) != "<epsilon>")
+            {
+                std::string symbol = LItem.prod.right.at(LItem.location);
+
+                if (IsTerminal(symbol))
+                {
+                    // 找到对应终结符的出边，得到其转移到的状态
+                    for (size_t k = 0; k < canonicalCollection_.g.at(i).size(); ++k)
+                    {
+                        std::pair<std::string, size_t> pair = canonicalCollection_.g.at(i).at(k);
+                        if (pair.first == symbol)
+                        {
+                            action_.at(i).at(symbol).first = "Shift";
+                            action_.at(i).at(symbol).second = pair.second;
+
+                            /*
+                             * 对于
+                             * S -> a b c
+                             * S -> a b d
+                             * 怎么处理？
+                             */
+                            break;
+                        }
+                    }
+                }
+            }
+            else    // 归约项目
+            {
+                /* 接收项目 */
+                if (LItem.prod.left == grammar_.prods.at(0).left && LItem.location == LItem.prod.right.size())
+                {
+                    action_.at(i).at("#").first = "Accept";
+                }
+                else
+                {
+                    LeftPart left_part = LItem.prod.left;
+                    for (const auto & terminal : follow_set_.at(left_part))
+                    {
+                        // 找到产生式对于的序号
+                        for (size_t k = 0; k < grammar_.prods.size(); ++k)
+                        {
+                            if (LItem.prod == grammar_.prods.at(k))
+                            {
+                                action_.at(i).at(terminal).first = "Reduce";
+                                action_.at(i).at(terminal).second = k;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 说明当前状态不存在出边
+        if (canonicalCollection_.g.find(i) == canonicalCollection_.g.end())
+            continue;
+
+        // 构建goto表
+        // 遍历当前项目集的pair<接受符号，转移状态>
+        for (const auto & it : canonicalCollection_.g.at(i))
+        {
+            std::string symbol = it.first;
+            if (IsNonTerminal(symbol))
+                goto_.at(i).at(symbol) = it.second;
+        }
+    }
 }
 
-void LR1Parser::Closure(LR0Items& lr0Items)
+void LR1Parser::Closure(LR1Items& lr1Items)
 {
     bool still_changing = true;
     while (still_changing)  // 开始迭代
     {
         still_changing = false;
 
-        LR0Items tmp_items;
+        LR1Items tmp_items;
         // 枚举每个项目
-        tmp_items.items.assign(lr0Items.items.begin(), lr0Items.items.end());
+        tmp_items.items.assign(lr1Items.items.begin(), lr1Items.items.end());
         for (auto & L : tmp_items.items)
         {
             // 非归约项目
@@ -215,14 +339,14 @@ void LR1Parser::Closure(LR0Items& lr0Items)
                     {
                         if (prod.left == symbol)
                         {
-                            LR0Item new_item;
+                            LR1Item new_item;
                             new_item.location = 0;
                             new_item.prod = prod;
                             // 查看是否已经在当前的LR0项目集中
-                            if (!IsInLR0Items(lr0Items, new_item))
+                            if (!IsInLR1Items(lr1Items, new_item))
                             {
                                 still_changing = true;  // 继续迭代
-                                lr0Items.items.emplace_back(new_item);
+                                lr1Items.items.emplace_back(new_item);
                             }
                         }
                     }
@@ -238,28 +362,208 @@ void LR1Parser::Closure(LR0Items& lr0Items)
  * @param symbol - 经symbol转移
  * @param to - 转移后的项目集转移后的项目集
  */
-void LR1Parser::Go(LR0Items &from, const std::string& symbol, LR0Items &to)
+void LR1Parser::Go(LR1Items &from, const std::string& symbol, LR1Items &to)
 {
     for (const auto& item : from.items)
     {
         // 寻找非归约项目
-        if (item.location < item.prod.right.size())
+        if (item.location < item.prod.right.size() && item.prod.right.at(item.location) != "<epsilon>")
         {
             std::string next_symbol = item.prod.right.at(item.location);
             // 如果点后面是非终结符，且和传入的符号相同
             if (next_symbol == symbol)
             {
-                LR0Item lr0Item;
-                lr0Item.location = item.location + 1;
-                lr0Item.prod.left.assign(item.prod.left);
-                lr0Item.prod.right.assign(item.prod.right.begin(), item.prod.right.end());
-                to.items.emplace_back(lr0Item);
+                LR1Item lr1Item;
+                lr1Item.location = item.location + 1;
+                lr1Item.prod.left.assign(item.prod.left);
+                lr1Item.prod.right.assign(item.prod.right.begin(), item.prod.right.end());
+                to.items.emplace_back(lr1Item);
             }
         }
     }
     // 若to中有项目，求其闭包
     if (!to.items.empty())
         Closure(to);
+}
+
+/*!
+ * 求（T U N）的FIRST集
+ */
+void LR1Parser::GetFirstSet()
+{
+    // 终结符的FIRST集是其本身
+    for (const auto& symbol : grammar_.T)
+        first_set_[symbol].emplace(symbol);
+    for (const auto& symbol : grammar_.N)
+        first_set_[symbol] = {};
+
+    // 迭代查找非终结符的FIRST集
+    bool still_changing = true;
+    while (still_changing)
+    {
+        still_changing = false;
+        for (const auto & prod : grammar_.prods)
+        {
+            size_t old_size = first_set_.at(prod.left).size();
+
+            // 如果右部第一个符号是空或终结符，则加入到左部的FIRST集中
+            std::string symbol = prod.right.at(0);
+            if (IsTerminal(symbol) || symbol == "<epsilon>")
+            {
+                first_set_.at(prod.left).emplace(symbol);
+            }
+            else
+            {
+                bool next = true; // 当前符号是非终结符，且当前符号可以推出空，则还需要判断下一个符号
+                size_t idx = 0; // 待判断符号的下标
+                while (next && idx < prod.right.size())
+                {
+                    next = false;
+                    symbol = prod.right.at(idx);
+                    // 遍历当前符号的FIRST集
+                    for (const auto& it : first_set_.at(prod.right.at(idx)))
+                    {
+                        // 把当前符号的FIRST集中非空元素加入到左部符号的FIRST集中
+                        // 右部所有符号都能推导出ε，则把ε加入到左部符号的FIRST集中
+                        if (it != "<epsilon>")
+                        {
+                            first_set_.at(prod.left).emplace(it);
+                        }
+                        else    // 当前符号能推导出ε，则还需判断下一个符号
+                        {
+                            next = true;
+                            idx += 1;
+                        }
+                    }
+                }
+                // 如果next为true，则产生式右部每一个符号都能推导出ε，将ε加入左部的FIRST集中
+                if (next)
+                    first_set_.at(prod.left).emplace("<epsilon>");
+            }
+
+            size_t new_size = first_set_.at(prod.left).size();
+            if (new_size != old_size)
+                still_changing = true;
+        }
+    }
+
+    //system("cls");
+    std::cout << "FIRST:" << std::endl;
+    for (const auto & it : grammar_.N)
+    {
+        std::cout << it << ": ";
+        for (const auto & it1 : first_set_.at(it))
+            std::cout << it1 << " ";
+        std::cout << std::endl;
+    }
+    //system("pause");
+}
+
+/*!
+ * 求非终结符的FOLLOW集
+ */
+void LR1Parser::GetFollowSet()
+{
+    // 初始化终结符的FOLLOW集为空寂
+    for (const auto& symbol : grammar_.N)
+        follow_set_[symbol] = {};
+
+    // 将#加入到文法的开始符号的FOLLOW集中
+    follow_set_.at(grammar_.N.at(0)).emplace("#");
+
+    bool still_changing = true;
+    while (still_changing)
+    {
+        still_changing = false;
+        for (const auto & prod : grammar_.prods)
+        {
+            for (size_t i = 0; i < prod.right.size(); ++i)
+            {
+                if (IsNonTerminal(prod.right.at(i)))
+                {
+
+                    size_t old_size = follow_set_.at(prod.right.at(i)).size();
+                    // ss是从下一个符号开始的符号串
+                    std::vector<std::string> ss(prod.right.begin() + i + 1, prod.right.end());
+                    std::set<std::string> afters_first_set = GetStringFollowSet(ss);
+                    bool can_result_epsilon = false;
+                    // 将ss的FIRST集中所有非空元素加入到当前符号的FOLLOW集中
+                    for (const auto & it : afters_first_set)
+                    {
+                        if (it != "<epsilon>")
+                            follow_set_.at(prod.right.at(i)).emplace(it);
+                        else
+                            can_result_epsilon = true;
+                    }
+
+                    // 如果ss能推导出ε，或者当前符号是产生式右部末尾
+                    if (can_result_epsilon || (i+1 == prod.right.size()))
+                        follow_set_.at(prod.right.at(i)).insert(
+                                follow_set_.at(prod.left).begin(),
+                                follow_set_.at(prod.left).end()
+                                );
+
+                    size_t new_size = follow_set_.at(prod.right.at(i)).size();
+                    if (new_size != old_size)
+                        still_changing = true;
+                }
+            }
+        }
+    }
+
+    //system("cls");
+    std::cout << "FOLLOW:" << std::endl;
+    for (const auto & it : grammar_.N)
+    {
+        std::cout << it << ": ";
+        for (const auto & it1 : follow_set_.at(it))
+            std::cout << it1 << " ";
+        std::cout << std::endl;
+    }
+    //system("pause");
+}
+
+/*!
+ * 求串的FIRST集中，返回结果集
+ * @param ss
+ * @return
+ */
+std::set<std::string> LR1Parser::GetStringFollowSet(const std::vector<std::string>& ss)
+{
+    std::set<std::string> first;
+
+    if (ss.empty())
+        return first;
+
+    // 当前符号是非终结符，且当前符号可以推导出空，则还需要判断下一个符号
+    bool still_changing = true;
+    size_t idx = 0;
+    while (still_changing && idx < ss.size())
+    {
+        still_changing = false;
+        // 当前符号是终结符或空，加入到FIRST集中
+        if (IsTerminal(ss.at(idx)) || ss.at(idx) == "<epsilon>")
+        {
+            first.emplace(ss.at(idx));
+        }
+        else
+        {
+            for (const auto & symbol : first_set_.at(ss.at(idx)))
+            {
+                if (symbol != "<epsilon>")
+                    first.emplace(symbol);
+                else
+                    still_changing = true;
+            }
+        }
+        idx += 1;
+    }
+
+    // 如果到达产生式右部末尾还为真，说明整个串可以推导出空，将ε加入到FIRST集中
+    if (still_changing)
+        first.emplace("<epsilon>");
+
+    return first;
 }
 
 bool LR1Parser::IsTerminal(const std::string& symbol)
@@ -272,33 +576,33 @@ bool LR1Parser::IsNonTerminal(const std::string& symbol)
     return std::find(grammar_.N.begin(), grammar_.N.end(), symbol) != grammar_.N.end();
 }
 
-bool LR1Parser::IsInLR0Items(const LR0Items& lr0Items, const LR0Item& lr0Item) const
+bool LR1Parser::IsInLR1Items(const LR1Items& lr1Items, const LR1Item& lr1Item) const
 {
-    if (std::any_of(lr0Items.items.begin(), lr0Items.items.end(), [&lr0Item](const LR0Item& item) {
-        return item.prod == lr0Item.prod && item.location == lr0Item.location;
+    if (std::any_of(lr1Items.items.begin(), lr1Items.items.end(), [&lr1Item](const LR1Item& item) {
+        return item.prod == lr1Item.prod && item.location == lr1Item.location;
     })) return true;
     return false;
 }
 
 /*!
  * 判断传入的项目集是否在项目集规范族中，若在返回其序号
- * @param lr0Items
+ * @param lr1Items
  * @return
  */
-size_t LR1Parser::IsInCanonicalCollection(LR0Items &lr0Items)
+size_t LR1Parser::IsInCanonicalCollection(LR1Items &lr1Items)
 {
     for (size_t i = 0; i < canonicalCollection_.items.size(); ++i)
     {
-        LR0Items& cur_items = canonicalCollection_.items.at(i);
+        LR1Items& cur_items = canonicalCollection_.items.at(i);
 
-        if (cur_items.items.size() != lr0Items.items.size())
+        if (cur_items.items.size() != lr1Items.items.size())
             continue;
 
         // 每个项目都在该项目集中，则认为这两个项目集相等
         bool flag = true;
         for (const auto& item : cur_items.items)
         {
-            if (!IsInLR0Items(lr0Items, item))
+            if (!IsInLR1Items(lr1Items, item))
             {
                 flag = false;
                 break;

@@ -87,7 +87,9 @@ void Lexer::Tokenize()
 
         out_ <<  "(" << it->line << ":" << it->column << ")\t\t" << "{" << it->content << ", " << it->type << "}\n";
     }
-    // 可以考虑输出EOF
+    // 可以考虑输出EOF，将EOF内容或类型转为"#"作为结束符号供语法分析使用
+    token = tokens_.at(tokens_.size() - 1);
+    out_ << "(" << token.line << ":" << token.column << ")\t\t" << "{" << token.content << ", " << "#" << "}\n";
 
     std::cout << "词法分析完成！" << std::endl;
     out_.flush();

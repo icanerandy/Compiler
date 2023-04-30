@@ -53,24 +53,24 @@ struct Grammar
     std::vector<Production> prods;  // 产生式
 };
 
-// LR0项目
-struct LR0Item
+// LR1项目
+struct LR1Item
 {
     Production prod;
     size_t location{};    // 点所在的位置
 };
 
 // LR0项目集
-struct LR0Items
+struct LR1Items
 {
-    std::vector<LR0Item> items{};
+    std::vector<LR1Item> items{};
 };
 
 // LR0项目集规范族
 struct CanonicalCollection
 {
-    std::vector<LR0Items> items;    // 项目集集合
-    std::vector< std::pair<std::string, size_t> > g[100];   // 保存DFA的图，first是经过什么转移，second是转移到的状态编号
+    std::vector<LR1Items> items;    // 项目集集合
+    std::map<size_t, std::vector< std::pair<std::string, size_t> >> g;   // 保存DFA的图，first是经过什么转移，second是转移到的状态编号
 };
 
 class LR1Parser
@@ -81,24 +81,32 @@ public:
 
 private:
     void InitGrammar();
+    void InitAction();
+    void InitGoto();
     void DFA();
     void CreateAnalysisTable();
-    void Closure(LR0Items& lr0Items);
-    void Go(LR0Items& from, const std::string& symbol, LR0Items& to);
-    bool IsTerminal(const std::string& symbol);
-    bool IsNonTerminal(const std::string& symbol);
-    bool IsInLR0Items(const LR0Items& lr0Items, const LR0Item& lr0Item) const;
-    size_t IsInCanonicalCollection(LR0Items& lr0Items);
+    void Closure(LR1Items& LR1Items);
+    void Go(LR1Items& from, const std::string& symbol, LR1Items& to);
     void GetFirstSet();
     void GetFollowSet();
+    std::set<std::string> GetStringFollowSet(const std::vector<std::string>& ss);
+    bool IsTerminal(const std::string& symbol);
+    bool IsNonTerminal(const std::string& symbol);
+    bool IsInLR1Items(const LR1Items& LR1Items, const LR1Item& LR1Item) const;
+    size_t IsInCanonicalCollection(LR1Items& LR1Items);
 
 
 private:
     Grammar grammar_;
     CanonicalCollection canonicalCollection_;
-    std::queue< std::pair<LR0Items, size_t> > Q;    // DFA队列，用于存储待转移的有效项目集
-    std::pair<size_t, size_t> action_[100][100];    // first表示分析动作，0->ACC 1->S 2->R，second表示转移状态或者产生式编号
-    size_t goto_[100][100];
+    std::queue< std::pair<LR1Items, size_t> > Q;    // DFA队列，用于存储待转移的有效项目集
+    // map<现在的状态, map<接收符号, pair<(移进，归约，接收), 转移状态>>>
+    std::map<size_t, std::map<std::string, std::pair<std::string, size_t>>> action_;
+    std::map<size_t, std::map<std::string, size_t>> goto_;
+
+private:
+    std::map<std::string, std::set<std::string>> first_set_;
+    std::map<std::string, std::set<std::string>> follow_set_;
 
 private:
     std::ifstream grammar_in_;
