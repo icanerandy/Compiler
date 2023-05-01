@@ -237,6 +237,39 @@ void LR1Parser::DFA()
 //        std::set< std::pair<std::string, size_t> > tmp(it.begin(), it.end());
 //        it.assign(tmp.begin(), tmp.end());
 //    }
+
+    // 打印项目集规范族
+    std::cout << "\n\n\n";
+    std::cout << "canonicalCollection's size is " << canonicalCollection_.items.size() << "\n";
+    for (size_t i = 0; i < canonicalCollection_.items.size(); ++i)
+    {
+        std::cout << "---------------------------------------------------------------------\n";
+        std::cout << "LR1Items " << i << ":\n";
+        const LR1Items& items = canonicalCollection_.items.at(i);
+        for (const auto& item : items.items)
+        {
+            std::cout << item.prod.left << "->";
+            for (size_t k = 0; k < item.prod.right.size(); ++k)
+            {
+                if (item.location == k)
+                    std::cout << ".";
+                std::cout << item.prod.right.at(k);
+            }
+            if (item.location == item.prod.right.size())
+                std::cout << ".";
+            std::cout << ", " << item.next << "\t";
+        }
+        std::cout << "\n";
+
+        if (canonicalCollection_.g.find(i) != canonicalCollection_.g.end())
+        {
+            for (const auto& pair : canonicalCollection_.g.at(i))
+            {
+                std::cout << "using " << pair.first << " to " << pair.second << "\n";
+            }
+        }
+    }
+    std::cout << "---------------------------------------------------------------------\n";
 }
 
 void LR1Parser::CreateAnalysisTable()
@@ -284,7 +317,12 @@ void LR1Parser::CreateAnalysisTable()
                 }
                 else
                 {
-                    // 找到产生式对于的序号
+                    // 找到产生式对应的序号
+                    // LR(1)一个归约项目的向前符号有多个则有多个项目除向前符号外都相同，这几个项目都会遍历到
+                    // 然后在对应的接收向前符号时归约，即接收展望符集时归约
+
+                    // TODO:
+                    /* 这几个项目叫做同心项目，可以使用展望符的并集作为LR1项目的一部分 */
                     for (size_t k = 0; k < grammar_.prods.size(); ++k)
                     {
                         if (LItem.prod == grammar_.prods.at(k))
@@ -315,7 +353,9 @@ void LR1Parser::CreateAnalysisTable()
 
 void LR1Parser::Parse()
 {
+    std::cout << "\n\n\n";
     std::cout << "Syntax parsing start!" << std::endl;
+    std::cout << "---------------------------------------------------------------------\n";
     /* 初始化 */
     std::stack<size_t> state_stack; // 状态栈
     std::stack<std::string> symbol_stack; // 符号栈
@@ -325,7 +365,7 @@ void LR1Parser::Parse()
     size_t ip = 0;
     do
     {
-        std::cout << "处理第" << ip << "个token..." << std::endl;
+        std::cout << "处理第" << ip << "个token " << tokens_.at(ip).content << " ..." << std::endl;
         std::string type = tokens_.at(ip)./*type*/content;
 
         size_t cur_state = state_stack.top();
@@ -376,7 +416,7 @@ void LR1Parser::Parse()
             break;
         }
     } while (true);
-
+    std::cout << "---------------------------------------------------------------------\n";
 }
 
 void LR1Parser::Closure(LR1Items& lr1Items)
@@ -471,13 +511,6 @@ void LR1Parser::GetFirstSet()
     for (const auto& symbol : grammar_.N)
         first_set_[symbol] = {};
 
-    for (const auto& symbol : first_set_)
-        std::cout << symbol.first << "\t";
-
-    std::cout << "\n\n";
-    for (const auto& symbol : grammar_.prods)
-        std::cout << symbol.left << "\t";
-
     // 迭代查找非终结符的FIRST集
     bool still_changing = true;
     while (still_changing)
@@ -522,23 +555,11 @@ void LR1Parser::GetFirstSet()
                     first_set_.at(prod.left).emplace("<epsilon>");
             }
 
-            std::cout << prod.left << std::endl;
             size_t new_size = first_set_.at(prod.left).size();
             if (new_size != old_size)
                 still_changing = true;
         }
     }
-
-    //system("cls");
-    std::cout << "FIRST:" << std::endl;
-    for (const auto & it : grammar_.N)
-    {
-        std::cout << it << ": ";
-        for (const auto & it1 : first_set_.at(it))
-            std::cout << it1 << " ";
-        std::cout << std::endl;
-    }
-    //system("pause");
 }
 
 /*!
@@ -592,17 +613,6 @@ void LR1Parser::GetFollowSet()
             }
         }
     }
-
-    //system("cls");
-    std::cout << "FOLLOW:" << std::endl;
-    for (const auto & it : grammar_.N)
-    {
-        std::cout << it << ": ";
-        for (const auto & it1 : follow_set_.at(it))
-            std::cout << it1 << " ";
-        std::cout << std::endl;
-    }
-    //system("pause");
 }
 
 /*!

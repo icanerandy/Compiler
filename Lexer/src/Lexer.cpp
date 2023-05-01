@@ -71,9 +71,10 @@ void Lexer::Tokenize()
     do
     {
         token = Gettoken();
-        std::cout <<  "(" << token.line << ":" << token.column << ")\t\t" << "{" << token.content << ", " << token.type << "}" << std::endl;
         if (token.type != "ERROR" && token.type != "NOTE")
             tokens_.emplace_back(token);
+        else if (token.type == "ERROR")
+            std::cout <<  "(" << token.line << ":" << token.column << ")\t\t" << "{" << token.content << ", " << token.type << "}\n";
     } while (token.type != "EOF");
 
     for (auto it = tokens_.begin(); it != tokens_.end() - 1; ++it)

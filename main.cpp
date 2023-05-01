@@ -61,12 +61,12 @@ void InitFA()
 int main() {
     // InitFA();
 
-    Lexer lexer(R"(..\Lexer\test.txt)",
+    Lexer lexer(R"(..\Grammar\TestExamples\test0.1.txt)",
                 R"(..\Lexer\lexical_out.txt)");
 
     std::vector<Token> tokens = {
-            {"b"},
             {"a"},
+            {"b"},
             {"a"},
             {"b"},
             {"#"}
