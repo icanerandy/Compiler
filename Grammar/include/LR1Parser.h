@@ -21,6 +21,7 @@
 #include <iostream>
 #include <sstream>
 #include <algorithm>
+#include "include/Lexer.h"
 
 using LeftPart = std::string;
 using RightPart = std::vector<std::string>;
@@ -57,7 +58,8 @@ struct Grammar
 struct LR1Item
 {
     Production prod;
-    size_t location{};    // 点所在的位置
+    size_t location{};  // 点所在的位置
+    std::string next;   // 展望符集
 };
 
 // LR0项目集
@@ -76,7 +78,7 @@ struct CanonicalCollection
 class LR1Parser
 {
 public:
-    explicit LR1Parser(const std::string& grammar_in, const std::string& grammar_output, const std::string& lr_parse_result);
+    explicit LR1Parser(const std::vector<Token>& tokens, const std::string& grammar_in, const std::string& lr_parse_result);
     ~LR1Parser();
 
 private:
@@ -85,11 +87,12 @@ private:
     void InitGoto();
     void DFA();
     void CreateAnalysisTable();
+    void Parse();
     void Closure(LR1Items& LR1Items);
     void Go(LR1Items& from, const std::string& symbol, LR1Items& to);
     void GetFirstSet();
     void GetFollowSet();
-    std::set<std::string> GetStringFollowSet(const std::vector<std::string>& ss);
+    std::set<std::string> GetStringFirstSet(const std::vector<std::string>& ss);
     bool IsTerminal(const std::string& symbol);
     bool IsNonTerminal(const std::string& symbol);
     bool IsInLR1Items(const LR1Items& LR1Items, const LR1Item& LR1Item) const;
@@ -97,6 +100,7 @@ private:
 
 
 private:
+    std::vector<Token> tokens_;
     Grammar grammar_;
     CanonicalCollection canonicalCollection_;
     std::queue< std::pair<LR1Items, size_t> > Q;    // DFA队列，用于存储待转移的有效项目集
@@ -110,7 +114,6 @@ private:
 
 private:
     std::ifstream grammar_in_;
-    std::ofstream grammar_out_;
     std::ofstream lr_parse_result_;
 };
 

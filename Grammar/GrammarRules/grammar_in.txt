@@ -5,7 +5,7 @@ var-declaration -> type-specifier ID ; | type-specifier ID [ NUM ] ;
 type-specifier -> int | void
 fun-declaration -> type-specifier IDF ( params ) | compound-stmt
 params -> params-list | void
-params-list -> params-list , param | param 
+params-list -> params-list , param | param
 param -> type-specifier ID | type-specifier ID [ ]
 compound-stmt -> { local-declarations statement-list }
 local-declarations -> local-declarations var-declaration | <epsilon>

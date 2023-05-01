@@ -10,54 +10,66 @@
 
 #include "include/LR1Parser.h"
 
-LR1Parser::LR1Parser(const std::string& grammar_in, const std::string& grammar_output, const std::string& lr_parse_result)
+LR1Parser::LR1Parser(const std::vector<Token>& tokens, const std::string& grammar_in, const std::string& lr_parse_result)
+    : tokens_(tokens)
 {
     grammar_in_.open(grammar_in, std::ios::in);
     if (!grammar_in_.is_open())
     {
-        std::cerr << "è¯»å–è¯­æ³•æ–‡ä»¶å¤±è´¥ï¼" << std::endl;
+        std::cerr << "¶ÁÈ¡Óï·¨ÎÄ¼şÊ§°Ü£¡" << std::endl;
         system("pause");
         exit(-1);
     }
-    grammar_out_.open(grammar_output, std::ios::out);
-    if (!grammar_out_.is_open())
-    {
-        std::cerr << "è¾“å‡ºä¿®æ”¹åçš„è¯­æ³•æ–‡ä»¶å¤±è´¥ï¼" << std::endl;
-        system("pause");
-        exit(-1);
-    }
-    lr_parse_result_.open(grammar_output, std::ios::out);
+    lr_parse_result_.open(lr_parse_result, std::ios::out);
     if (!lr_parse_result_.is_open())
     {
-        std::cerr << "è¾“å‡ºLL(1)åˆ†æç»“æœå¤±è´¥ï¼" << std::endl;
+        std::cerr << "Êä³öLL(1)·ÖÎö½á¹ûÊ§°Ü£¡" << std::endl;
         system("pause");
         exit(-1);
     }
 
+    // ³õÊ¼»¯ÎÄ·¨
     InitGrammar();
-}
+
+    // ÇóFIRST¼¯ºÍFOLLOW¼¯
+    GetFirstSet();
+    GetFollowSet();
+
+    // ¹¹½¨DFAºÍSLR1Ô¤²â·ÖÎö±í
+    DFA();
+
+    // ³õÊ¼»¯actionºÍgoto±íÎª¿Õ
+    InitAction();
+    InitGoto();
+
+    // Éú³ÉSLR1·ÖÎö±í
+    CreateAnalysisTable();
+
+    // Óï·¨·ÖÎö
+    Parse();
+ }
 
 void LR1Parser::InitGrammar()
 {
     std::string line;
 
-    // è¯»å…¥æ–‡æ³•
+    // ¶ÁÈëÎÄ·¨
     while (std::getline(grammar_in_, line))
     {
         LeftPart left;
         RightPart right;
         Production prod;
 
-        // è¯»å…¥å·¦éƒ¨
+        // ¶ÁÈë×ó²¿
         std::stringstream ss(line);
         ss >> left;
         prod.left = left;
 
-        // å°†->åæ‰
+        // ½«->ÍÌµô
         std::string arrow;
         ss >> arrow;
 
-        // éå†å³éƒ¨ç¬¦å·
+        // ±éÀúÓÒ²¿·ûºÅ
         std::string symbol;
         while (ss >> symbol)
         {
@@ -74,25 +86,25 @@ void LR1Parser::InitGrammar()
         grammar_.prods.emplace_back(prod);
     }
     /*
-     * ä¸ºä»€ä¹ˆè¦æ·»åŠ ä¸€ä¸ªæ–°çš„äº§ç”Ÿå¼ï¼Ÿ
-     * å› ä¸ºè¦å°†è¡¨è¾¾å¼è½¬ä¸ºNFAï¼Œå¦‚æœå¼€å§‹ç¬¦å·å¯¹åº”å¤šä¸ªäº§ç”Ÿå¼ï¼Œåˆ™NFAçš„åˆæ€ä¹Ÿä¼šæœ‰å¤šä¸ª
-     * è™½ç„¶èƒ½å¤„ç†å¤šä¸ªåˆæ€ï¼Œä½†æ˜¾å¾—å¾ˆéº»çƒ¦ï¼Œä¸å¦‚æ–°å¡«ä¸€æ¡äº§ç”Ÿå¼
+     * ÎªÊ²Ã´ÒªÌí¼ÓÒ»¸öĞÂµÄ²úÉúÊ½£¿
+     * ÒòÎªÒª½«±í´ïÊ½×ªÎªNFA£¬Èç¹û¿ªÊ¼·ûºÅ¶ÔÓ¦¶à¸ö²úÉúÊ½£¬ÔòNFAµÄ³õÌ¬Ò²»áÓĞ¶à¸ö
+     * ËäÈ»ÄÜ´¦Àí¶à¸ö³õÌ¬£¬µ«ÏÔµÃºÜÂé·³£¬²»ÈçĞÂÌîÒ»Ìõ²úÉúÊ½
      */
-    // å°†S'->SåŠ å…¥å¼€å¤´
+    // ½«S'->S¼ÓÈë¿ªÍ·
     LeftPart start_left = grammar_.prods.at(0).left + '\'';
     RightPart start_right;
     start_right.emplace_back(grammar_.prods.at(0).left);
     grammar_.prods.insert(grammar_.prods.begin(), {start_left, start_right});
     grammar_.num = grammar_.prods.size();
 
-    // å·¦éƒ¨çš„éƒ½ä¸ºéç»ˆç»“ç¬¦
+    // ×ó²¿µÄ¶¼Îª·ÇÖÕ½á·û
     for (const auto& prod : grammar_.prods)
         grammar_.N.emplace_back(prod.left);
-    // å»é‡
+    // È¥ÖØ
     std::vector<std::string>::iterator it, it1;
     for (it = ++grammar_.N.begin(); it != grammar_.N.end();)
     {
-        it1 = find(grammar_.N.begin(), it, *it); //è‹¥å½“å‰ä½ç½®ä¹‹å‰å­˜åœ¨é‡å¤å…ƒç´ ï¼Œåˆ é™¤å½“å‰å…ƒç´ ,eraseè¿”å›å½“å‰å…ƒç´ çš„ä¸‹ä¸€ä¸ªå…ƒç´ æŒ‡é’ˆ
+        it1 = find(grammar_.N.begin(), it, *it); //Èôµ±Ç°Î»ÖÃÖ®Ç°´æÔÚÖØ¸´ÔªËØ£¬É¾³ıµ±Ç°ÔªËØ,erase·µ»Øµ±Ç°ÔªËØµÄÏÂÒ»¸öÔªËØÖ¸Õë
         if (it1 != it)
             it = grammar_.N.erase(it);
         else
@@ -100,7 +112,7 @@ void LR1Parser::InitGrammar()
     }
 
 
-    // å³éƒ¨ä¸­æ²¡æœ‰åœ¨å·¦éƒ¨ä¸­å‡ºç°è¿‡çš„ç¬¦å·éƒ½ä¸ºç»ˆç»“ç¬¦ï¼Œæ³¨æ„ç¨‹åºå°†Îµå½“ä½œç»ˆç»“ç¬¦
+    // ÓÒ²¿ÖĞÃ»ÓĞÔÚ×ó²¿ÖĞ³öÏÖ¹ıµÄ·ûºÅ¶¼ÎªÖÕ½á·û£¬×¢Òâ³ÌĞò½«¦Åµ±×÷ÖÕ½á·û
     for (const auto& prod : grammar_.prods)
     {
         for (const auto& symbol : prod.right)
@@ -109,29 +121,15 @@ void LR1Parser::InitGrammar()
                     grammar_.T.emplace_back(symbol);
         }
     }
-    // å»é‡
+    // È¥ÖØ
     for (it = ++grammar_.T.begin(); it != grammar_.T.end();)
     {
-        it1 = find(grammar_.T.begin(), it, *it); //è‹¥å½“å‰ä½ç½®ä¹‹å‰å­˜åœ¨é‡å¤å…ƒç´ ï¼Œåˆ é™¤å½“å‰å…ƒç´ ,eraseè¿”å›å½“å‰å…ƒç´ çš„ä¸‹ä¸€ä¸ªå…ƒç´ æŒ‡é’ˆ
+        it1 = find(grammar_.T.begin(), it, *it); //Èôµ±Ç°Î»ÖÃÖ®Ç°´æÔÚÖØ¸´ÔªËØ£¬É¾³ıµ±Ç°ÔªËØ,erase·µ»Øµ±Ç°ÔªËØµÄÏÂÒ»¸öÔªËØÖ¸Õë
         if (it1 != it)
             it = grammar_.T.erase(it);
         else
             it++;
     }
-
-    // æ±‚FIRSTé›†å’ŒFOLLOWé›†
-    GetFirstSet();
-    GetFollowSet();
-
-    // æ„å»ºDFAå’ŒSLR1é¢„æµ‹åˆ†æè¡¨
-    DFA();
-
-    // åˆå§‹åŒ–actionå’Œgotoè¡¨ä¸ºç©º
-    InitAction();
-    InitGoto();
-
-    // ç”ŸæˆSLR1åˆ†æè¡¨
-    CreateAnalysisTable();
 }
 
 void LR1Parser::InitAction()
@@ -143,7 +141,7 @@ void LR1Parser::InitAction()
             if (symbol != "<epsilon>")
                 action_[i][symbol] = std::make_pair("", -1);
         }
-        // ä¸è¦å¿˜äº†æŠŠç»“æŸç¬¦æ”¾è¿›å»
+        // ²»ÒªÍüÁË°Ñ½áÊø·û·Å½øÈ¥
         action_[i]["#"] = std::make_pair("", -1);
     }
 }
@@ -159,34 +157,36 @@ void LR1Parser::InitGoto()
 
 void LR1Parser::DFA()
 {
-    // æ„å»ºåˆå§‹é¡¹ç›®é›†
+    // ¹¹½¨³õÊ¼ÏîÄ¿¼¯
     LR1Item lr1Item;
     lr1Item.location = 0;
     lr1Item.prod.left = grammar_.prods[0].left;
     lr1Item.prod.right = grammar_.prods[0].right;
+    lr1Item.next = "#";
+
     LR1Items lr1Items;
     lr1Items.items.emplace_back(lr1Item);
     Closure(lr1Items);
 
-    // åŠ å…¥åˆå§‹æœ‰æ•ˆé¡¹ç›®é›†
+    // ¼ÓÈë³õÊ¼ÓĞĞ§ÏîÄ¿¼¯
     canonicalCollection_.items.emplace_back(lr1Items);
-    // å°†æ–°åŠ å…¥çš„æœ‰æ•ˆé¡¹ç›®é›†åŠ å…¥å¾…æ‰©å±•é˜Ÿåˆ—ä¸­
+    // ½«ĞÂ¼ÓÈëµÄÓĞĞ§ÏîÄ¿¼¯¼ÓÈë´ıÀ©Õ¹¶ÓÁĞÖĞ
     Q.emplace(lr1Items, 0);
 
     while (!Q.empty())
     {
         LR1Items& from = Q.front().first;
         size_t sidx = Q.front().second;
-        // éå†æ¯ä¸ªç»ˆç»“ç¬¦
+        // ±éÀúÃ¿¸öÖÕ½á·û
         for (auto & symbol : grammar_.T)
         {
             LR1Items to;
             Go(from, symbol, to);
             size_t idx;
-            // è‹¥æ±‚å‡ºçš„é¡¹ç›®é›†toä¸ä¸ºç©º
+            // ÈôÇó³öµÄÏîÄ¿¼¯to²»Îª¿Õ
             if (!to.items.empty())
             {
-                // æŸ¥æ‰¾æ˜¯å¦å·²ç»åœ¨æœ‰æ•ˆé¡¹ç›®é›†æ—ä¸­
+                // ²éÕÒÊÇ·ñÒÑ¾­ÔÚÓĞĞ§ÏîÄ¿¼¯×åÖĞ
                 idx = IsInCanonicalCollection(to);
                 if (idx > 0)
                 {
@@ -196,15 +196,15 @@ void LR1Parser::DFA()
                 {
                     idx = canonicalCollection_.items.size();
                     canonicalCollection_.items.emplace_back(to);
-                    // æŠŠæ–°åŠ å…¥çš„æœ‰æ•ˆé¡¹ç›®é›†åŠ å…¥å¾…æ‰©å±•é˜Ÿåˆ—ä¸­
+                    // °ÑĞÂ¼ÓÈëµÄÓĞĞ§ÏîÄ¿¼¯¼ÓÈë´ıÀ©Õ¹¶ÓÁĞÖĞ
                     Q.emplace(to, idx);
                 }
-                // ä»åŸçŠ¶æ€åˆ°è½¬ç§»çŠ¶æ€åŠ ä¸€æ¡è¾¹ï¼Œè¾¹ä¸Šçš„å€¼ä¸ºè½¬ç§»ç¬¦å·
+                // ´ÓÔ­×´Ì¬µ½×ªÒÆ×´Ì¬¼ÓÒ»Ìõ±ß£¬±ßÉÏµÄÖµÎª×ªÒÆ·ûºÅ
                 canonicalCollection_.g[sidx].emplace_back(symbol, idx);
             }
         }
 
-        // éå†æ¯ä¸ªéç»ˆç»“ç¬¦
+        // ±éÀúÃ¿¸ö·ÇÖÕ½á·û
         for (auto & symbol : grammar_.N)
         {
             LR1Items to;
@@ -227,11 +227,11 @@ void LR1Parser::DFA()
             }
         }
 
-        // å½“å‰çŠ¶æ€æ‰©å±•å®Œæˆï¼Œå°†å…¶ç§»é™¤é˜Ÿåˆ—
+        // µ±Ç°×´Ì¬À©Õ¹Íê³É£¬½«ÆäÒÆ³ı¶ÓÁĞ
         Q.pop();
     }
 
-//    // ç§»é™¤DFAå›¾ä¸­çš„é‡å¤å…ƒç´ 
+//    // ÒÆ³ıDFAÍ¼ÖĞµÄÖØ¸´ÔªËØ
 //    for (auto & it : canonicalCollection_.g)
 //    {
 //        std::set< std::pair<std::string, size_t> > tmp(it.begin(), it.end());
@@ -245,17 +245,17 @@ void LR1Parser::CreateAnalysisTable()
     {
         LR1Items& LItems = canonicalCollection_.items.at(i);
 
-        // æ„å»ºactionè¡¨
+        // ¹¹½¨action±í
         for (const auto & LItem : LItems.items)
         {
-            // éå½’çº¦é¡¹ç›®
+            // ·Ç¹éÔ¼ÏîÄ¿
             if (LItem.location < LItem.prod.right.size() && LItem.prod.right.at(LItem.location) != "<epsilon>")
             {
                 std::string symbol = LItem.prod.right.at(LItem.location);
 
                 if (IsTerminal(symbol))
                 {
-                    // æ‰¾åˆ°å¯¹åº”ç»ˆç»“ç¬¦çš„å‡ºè¾¹ï¼Œå¾—åˆ°å…¶è½¬ç§»åˆ°çš„çŠ¶æ€
+                    // ÕÒµ½¶ÔÓ¦ÖÕ½á·ûµÄ³ö±ß£¬µÃµ½Æä×ªÒÆµ½µÄ×´Ì¬
                     for (size_t k = 0; k < canonicalCollection_.g.at(i).size(); ++k)
                     {
                         std::pair<std::string, size_t> pair = canonicalCollection_.g.at(i).at(k);
@@ -265,49 +265,45 @@ void LR1Parser::CreateAnalysisTable()
                             action_.at(i).at(symbol).second = pair.second;
 
                             /*
-                             * å¯¹äº
+                             * ¶ÔÓÚ
                              * S -> a b c
                              * S -> a b d
-                             * æ€ä¹ˆå¤„ç†ï¼Ÿ
+                             * ÔõÃ´´¦Àí£¿
                              */
                             break;
                         }
                     }
                 }
             }
-            else    // å½’çº¦é¡¹ç›®
+            else    // ¹éÔ¼ÏîÄ¿
             {
-                /* æ¥æ”¶é¡¹ç›® */
+                /* ½ÓÊÕÏîÄ¿ */
                 if (LItem.prod.left == grammar_.prods.at(0).left && LItem.location == LItem.prod.right.size())
                 {
                     action_.at(i).at("#").first = "Accept";
                 }
                 else
                 {
-                    LeftPart left_part = LItem.prod.left;
-                    for (const auto & terminal : follow_set_.at(left_part))
+                    // ÕÒµ½²úÉúÊ½¶ÔÓÚµÄĞòºÅ
+                    for (size_t k = 0; k < grammar_.prods.size(); ++k)
                     {
-                        // æ‰¾åˆ°äº§ç”Ÿå¼å¯¹äºçš„åºå·
-                        for (size_t k = 0; k < grammar_.prods.size(); ++k)
+                        if (LItem.prod == grammar_.prods.at(k))
                         {
-                            if (LItem.prod == grammar_.prods.at(k))
-                            {
-                                action_.at(i).at(terminal).first = "Reduce";
-                                action_.at(i).at(terminal).second = k;
-                                break;
-                            }
+                            action_.at(i).at(LItem.next).first = "Reduce";
+                            action_.at(i).at(LItem.next).second = k;
+                            break;
                         }
                     }
                 }
             }
         }
 
-        // è¯´æ˜å½“å‰çŠ¶æ€ä¸å­˜åœ¨å‡ºè¾¹
+        // ËµÃ÷µ±Ç°×´Ì¬²»´æÔÚ³ö±ß
         if (canonicalCollection_.g.find(i) == canonicalCollection_.g.end())
             continue;
 
-        // æ„å»ºgotoè¡¨
-        // éå†å½“å‰é¡¹ç›®é›†çš„pair<æ¥å—ç¬¦å·ï¼Œè½¬ç§»çŠ¶æ€>
+        // ¹¹½¨goto±í
+        // ±éÀúµ±Ç°ÏîÄ¿¼¯µÄpair<½ÓÊÜ·ûºÅ£¬×ªÒÆ×´Ì¬>
         for (const auto & it : canonicalCollection_.g.at(i))
         {
             std::string symbol = it.first;
@@ -317,36 +313,113 @@ void LR1Parser::CreateAnalysisTable()
     }
 }
 
+void LR1Parser::Parse()
+{
+    std::cout << "Syntax parsing start!" << std::endl;
+    /* ³õÊ¼»¯ */
+    std::stack<size_t> state_stack; // ×´Ì¬Õ»
+    std::stack<std::string> symbol_stack; // ·ûºÅÕ»
+    state_stack.emplace(0);
+    symbol_stack.emplace("#");
+
+    size_t ip = 0;
+    do
+    {
+        std::cout << "´¦ÀíµÚ" << ip << "¸ötoken..." << std::endl;
+        std::string type = tokens_.at(ip)./*type*/content;
+
+        size_t cur_state = state_stack.top();
+        if (action_.at(cur_state).at(type).first == "Shift")
+        {
+            state_stack.emplace(action_.at(cur_state).at(type).second);
+            symbol_stack.emplace(type);
+            ++ip;
+        }
+        else if (action_.at(cur_state).at(type).first == "Reduce")
+        {
+            size_t idx = action_.at(cur_state).at(type).second;
+            Production& prod = grammar_.prods.at(idx);
+
+            size_t size = 0;
+            if (!(prod.right.at(0) == "<epsilon>"))
+                size = prod.right.size();
+            for (; size >= 1; size--)
+            {
+                state_stack.pop();
+                symbol_stack.pop();
+            }
+
+            symbol_stack.emplace(prod.left);
+            cur_state = state_stack.top();
+
+            cur_state = goto_.at(cur_state).at(prod.left);
+            if (cur_state == -1)
+            {
+                // TODO: ´íÎó´¦Àí
+                std::cerr << "Syntax error at " << "(" << tokens_.at(ip).line << ", " << tokens_.at(ip).column << ")" << std::endl;
+                break;
+            }
+            else
+            {
+                state_stack.emplace(cur_state);
+            }
+        }
+        else if (action_.at(cur_state).at(type).first == "Accept")
+        {
+            std::cout << "Óï·¨·ÖÎö³É¹¦£¡" << std::endl;
+            break;
+        }
+        else
+        {
+            // TODO: ´íÎó´¦Àí
+            std::cerr << "Syntax error at " << "(" << tokens_.at(ip).line << ", " << tokens_.at(ip).column << ")" << std::endl;
+            break;
+        }
+    } while (true);
+
+}
+
 void LR1Parser::Closure(LR1Items& lr1Items)
 {
     bool still_changing = true;
-    while (still_changing)  // å¼€å§‹è¿­ä»£
+    while (still_changing)  // ¿ªÊ¼µü´ú
     {
         still_changing = false;
 
         LR1Items tmp_items;
-        // æšä¸¾æ¯ä¸ªé¡¹ç›®
+        // Ã¶¾ÙÃ¿¸öÏîÄ¿
         tmp_items.items.assign(lr1Items.items.begin(), lr1Items.items.end());
         for (auto & L : tmp_items.items)
         {
-            // éå½’çº¦é¡¹ç›®
+            // ·Ç¹éÔ¼ÏîÄ¿
             if (L.location < L.prod.right.size())
             {
                 std::string symbol = L.prod.right.at(L.location);
-                if (IsNonTerminal(symbol))  // æŠŠç¬¦åˆæ¡ä»¶çš„LR0é¡¹ç›®åŠ å…¥é—­åŒ…ä¸­
+                if (IsNonTerminal(symbol))  // °Ñ·ûºÏÌõ¼şµÄLR1ÏîÄ¿¼ÓÈë±Õ°üÖĞ
                 {
+                    // ÏÈÇó³ö·ÇÖÕ½á·ûºóÃæµÄ´®µÄFIRST¼¯
+                    std::vector<std::string> ss;
+                    ss.assign(L.prod.right.begin() + L.location + 1, L.prod.right.end());
+                    ss.emplace_back(L.next);
+                    std::set<std::string> string_first_set = GetStringFirstSet(ss);
+
                     for (auto & prod : grammar_.prods)
                     {
                         if (prod.left == symbol)
                         {
-                            LR1Item new_item;
-                            new_item.location = 0;
-                            new_item.prod = prod;
-                            // æŸ¥çœ‹æ˜¯å¦å·²ç»åœ¨å½“å‰çš„LR0é¡¹ç›®é›†ä¸­
-                            if (!IsInLR1Items(lr1Items, new_item))
+                            /* Ã¶¾ÙÃ¿¸öÔÚBºóÃæµÄ´®µÄFIRST¼¯ */
+                            for (const auto& it : string_first_set)
                             {
-                                still_changing = true;  // ç»§ç»­è¿­ä»£
-                                lr1Items.items.emplace_back(new_item);
+                                LR1Item new_item;
+                                new_item.location = 0;
+                                new_item.prod = prod;
+                                new_item.next = it;
+                                // ²é¿´ÊÇ·ñÒÑ¾­ÔÚµ±Ç°µÄLR1ÏîÄ¿¼¯ÖĞ
+                                if (!IsInLR1Items(lr1Items, new_item))
+                                {
+                                    still_changing = true;  // ¼ÌĞøµü´ú
+                                    lr1Items.items.emplace_back(new_item);
+                                }
                             }
                         }
                     }
@@ -357,47 +430,55 @@ void LR1Parser::Closure(LR1Items& lr1Items)
 }
 
 /*!
- * è½¬ç§»å‡½æ•°
- * @param from - å½“å‰çš„é¡¹ç›®é›†
- * @param symbol - ç»symbolè½¬ç§»
- * @param to - è½¬ç§»åçš„é¡¹ç›®é›†è½¬ç§»åçš„é¡¹ç›®é›†
+ * ×ªÒÆº¯Êı
+ * @param from - µ±Ç°µÄÏîÄ¿¼¯
+ * @param symbol - ¾­symbol×ªÒÆ
+ * @param to - ×ªÒÆºóµÄÏîÄ¿¼¯×ªÒÆºóµÄÏîÄ¿¼¯
  */
 void LR1Parser::Go(LR1Items &from, const std::string& symbol, LR1Items &to)
 {
     for (const auto& item : from.items)
     {
-        // å¯»æ‰¾éå½’çº¦é¡¹ç›®
+        // Ñ°ÕÒ·Ç¹éÔ¼ÏîÄ¿
         if (item.location < item.prod.right.size() && item.prod.right.at(item.location) != "<epsilon>")
         {
             std::string next_symbol = item.prod.right.at(item.location);
-            // å¦‚æœç‚¹åé¢æ˜¯éç»ˆç»“ç¬¦ï¼Œä¸”å’Œä¼ å…¥çš„ç¬¦å·ç›¸åŒ
+            // Èç¹ûµãºóÃæÊÇ·ÇÖÕ½á·û£¬ÇÒºÍ´«ÈëµÄ·ûºÅÏàÍ¬
             if (next_symbol == symbol)
             {
                 LR1Item lr1Item;
                 lr1Item.location = item.location + 1;
                 lr1Item.prod.left.assign(item.prod.left);
+                lr1Item.next = item.next;
                 lr1Item.prod.right.assign(item.prod.right.begin(), item.prod.right.end());
                 to.items.emplace_back(lr1Item);
             }
         }
     }
-    // è‹¥toä¸­æœ‰é¡¹ç›®ï¼Œæ±‚å…¶é—­åŒ…
+    // ÈôtoÖĞÓĞÏîÄ¿£¬ÇóÆä±Õ°ü
     if (!to.items.empty())
         Closure(to);
 }
 
 /*!
- * æ±‚ï¼ˆT U Nï¼‰çš„FIRSTé›†
+ * Çó£¨T U N£©µÄFIRST¼¯
  */
 void LR1Parser::GetFirstSet()
 {
-    // ç»ˆç»“ç¬¦çš„FIRSTé›†æ˜¯å…¶æœ¬èº«
+    // ÖÕ½á·ûµÄFIRST¼¯ÊÇÆä±¾Éí
     for (const auto& symbol : grammar_.T)
         first_set_[symbol].emplace(symbol);
     for (const auto& symbol : grammar_.N)
         first_set_[symbol] = {};
 
-    // è¿­ä»£æŸ¥æ‰¾éç»ˆç»“ç¬¦çš„FIRSTé›†
+    for (const auto& symbol : first_set_)
+        std::cout << symbol.first << "\t";
+
+    std::cout << "\n\n";
+    for (const auto& symbol : grammar_.prods)
+        std::cout << symbol.left << "\t";
+
+    // µü´ú²éÕÒ·ÇÖÕ½á·ûµÄFIRST¼¯
     bool still_changing = true;
     while (still_changing)
     {
@@ -406,7 +487,7 @@ void LR1Parser::GetFirstSet()
         {
             size_t old_size = first_set_.at(prod.left).size();
 
-            // å¦‚æœå³éƒ¨ç¬¬ä¸€ä¸ªç¬¦å·æ˜¯ç©ºæˆ–ç»ˆç»“ç¬¦ï¼Œåˆ™åŠ å…¥åˆ°å·¦éƒ¨çš„FIRSTé›†ä¸­
+            // Èç¹ûÓÒ²¿µÚÒ»¸ö·ûºÅÊÇ¿Õ»òÖÕ½á·û£¬Ôò¼ÓÈëµ½×ó²¿µÄFIRST¼¯ÖĞ
             std::string symbol = prod.right.at(0);
             if (IsTerminal(symbol) || symbol == "<epsilon>")
             {
@@ -414,33 +495,34 @@ void LR1Parser::GetFirstSet()
             }
             else
             {
-                bool next = true; // å½“å‰ç¬¦å·æ˜¯éç»ˆç»“ç¬¦ï¼Œä¸”å½“å‰ç¬¦å·å¯ä»¥æ¨å‡ºç©ºï¼Œåˆ™è¿˜éœ€è¦åˆ¤æ–­ä¸‹ä¸€ä¸ªç¬¦å·
-                size_t idx = 0; // å¾…åˆ¤æ–­ç¬¦å·çš„ä¸‹æ ‡
+                bool next = true; // µ±Ç°·ûºÅÊÇ·ÇÖÕ½á·û£¬ÇÒµ±Ç°·ûºÅ¿ÉÒÔÍÆ³ö¿Õ£¬Ôò»¹ĞèÒªÅĞ¶ÏÏÂÒ»¸ö·ûºÅ
+                size_t idx = 0; // ´ıÅĞ¶Ï·ûºÅµÄÏÂ±ê
                 while (next && idx < prod.right.size())
                 {
                     next = false;
                     symbol = prod.right.at(idx);
-                    // éå†å½“å‰ç¬¦å·çš„FIRSTé›†
-                    for (const auto& it : first_set_.at(prod.right.at(idx)))
+                    // ±éÀúµ±Ç°·ûºÅµÄFIRST¼¯
+                    for (const auto& it : first_set_.at(symbol))
                     {
-                        // æŠŠå½“å‰ç¬¦å·çš„FIRSTé›†ä¸­éç©ºå…ƒç´ åŠ å…¥åˆ°å·¦éƒ¨ç¬¦å·çš„FIRSTé›†ä¸­
-                        // å³éƒ¨æ‰€æœ‰ç¬¦å·éƒ½èƒ½æ¨å¯¼å‡ºÎµï¼Œåˆ™æŠŠÎµåŠ å…¥åˆ°å·¦éƒ¨ç¬¦å·çš„FIRSTé›†ä¸­
+                        // °Ñµ±Ç°·ûºÅµÄFIRST¼¯ÖĞ·Ç¿ÕÔªËØ¼ÓÈëµ½×ó²¿·ûºÅµÄFIRST¼¯ÖĞ
+                        // ÓÒ²¿ËùÓĞ·ûºÅ¶¼ÄÜÍÆµ¼³ö¦Å£¬Ôò°Ñ¦Å¼ÓÈëµ½×ó²¿·ûºÅµÄFIRST¼¯ÖĞ
                         if (it != "<epsilon>")
                         {
                             first_set_.at(prod.left).emplace(it);
                         }
-                        else    // å½“å‰ç¬¦å·èƒ½æ¨å¯¼å‡ºÎµï¼Œåˆ™è¿˜éœ€åˆ¤æ–­ä¸‹ä¸€ä¸ªç¬¦å·
+                        else    // µ±Ç°·ûºÅÄÜÍÆµ¼³ö¦Å£¬Ôò»¹ĞèÅĞ¶ÏÏÂÒ»¸ö·ûºÅ
                         {
                             next = true;
                             idx += 1;
                         }
                     }
                 }
-                // å¦‚æœnextä¸ºtrueï¼Œåˆ™äº§ç”Ÿå¼å³éƒ¨æ¯ä¸€ä¸ªç¬¦å·éƒ½èƒ½æ¨å¯¼å‡ºÎµï¼Œå°†ÎµåŠ å…¥å·¦éƒ¨çš„FIRSTé›†ä¸­
+                // Èç¹ûnextÎªtrue£¬Ôò²úÉúÊ½ÓÒ²¿Ã¿Ò»¸ö·ûºÅ¶¼ÄÜÍÆµ¼³ö¦Å£¬½«¦Å¼ÓÈë×ó²¿µÄFIRST¼¯ÖĞ
                 if (next)
                     first_set_.at(prod.left).emplace("<epsilon>");
             }
 
+            std::cout << prod.left << std::endl;
             size_t new_size = first_set_.at(prod.left).size();
             if (new_size != old_size)
                 still_changing = true;
@@ -460,15 +542,15 @@ void LR1Parser::GetFirstSet()
 }
 
 /*!
- * æ±‚éç»ˆç»“ç¬¦çš„FOLLOWé›†
+ * Çó·ÇÖÕ½á·ûµÄFOLLOW¼¯
  */
 void LR1Parser::GetFollowSet()
 {
-    // åˆå§‹åŒ–ç»ˆç»“ç¬¦çš„FOLLOWé›†ä¸ºç©ºå¯‚
+    // ³õÊ¼»¯ÖÕ½á·ûµÄFOLLOW¼¯Îª¿Õ¼Å
     for (const auto& symbol : grammar_.N)
         follow_set_[symbol] = {};
 
-    // å°†#åŠ å…¥åˆ°æ–‡æ³•çš„å¼€å§‹ç¬¦å·çš„FOLLOWé›†ä¸­
+    // ½«#¼ÓÈëµ½ÎÄ·¨µÄ¿ªÊ¼·ûºÅµÄFOLLOW¼¯ÖĞ
     follow_set_.at(grammar_.N.at(0)).emplace("#");
 
     bool still_changing = true;
@@ -483,11 +565,11 @@ void LR1Parser::GetFollowSet()
                 {
 
                     size_t old_size = follow_set_.at(prod.right.at(i)).size();
-                    // ssæ˜¯ä»ä¸‹ä¸€ä¸ªç¬¦å·å¼€å§‹çš„ç¬¦å·ä¸²
+                    // ssÊÇ´ÓÏÂÒ»¸ö·ûºÅ¿ªÊ¼µÄ·ûºÅ´®
                     std::vector<std::string> ss(prod.right.begin() + i + 1, prod.right.end());
-                    std::set<std::string> afters_first_set = GetStringFollowSet(ss);
+                    std::set<std::string> afters_first_set = GetStringFirstSet(ss);
                     bool can_result_epsilon = false;
-                    // å°†ssçš„FIRSTé›†ä¸­æ‰€æœ‰éç©ºå…ƒç´ åŠ å…¥åˆ°å½“å‰ç¬¦å·çš„FOLLOWé›†ä¸­
+                    // ½«ssµÄFIRST¼¯ÖĞËùÓĞ·Ç¿ÕÔªËØ¼ÓÈëµ½µ±Ç°·ûºÅµÄFOLLOW¼¯ÖĞ
                     for (const auto & it : afters_first_set)
                     {
                         if (it != "<epsilon>")
@@ -496,7 +578,7 @@ void LR1Parser::GetFollowSet()
                             can_result_epsilon = true;
                     }
 
-                    // å¦‚æœssèƒ½æ¨å¯¼å‡ºÎµï¼Œæˆ–è€…å½“å‰ç¬¦å·æ˜¯äº§ç”Ÿå¼å³éƒ¨æœ«å°¾
+                    // Èç¹ûssÄÜÍÆµ¼³ö¦Å£¬»òÕßµ±Ç°·ûºÅÊÇ²úÉúÊ½ÓÒ²¿Ä©Î²
                     if (can_result_epsilon || (i+1 == prod.right.size()))
                         follow_set_.at(prod.right.at(i)).insert(
                                 follow_set_.at(prod.left).begin(),
@@ -524,24 +606,24 @@ void LR1Parser::GetFollowSet()
 }
 
 /*!
- * æ±‚ä¸²çš„FIRSTé›†ä¸­ï¼Œè¿”å›ç»“æœé›†
+ * Çó´®µÄFIRST¼¯ÖĞ£¬·µ»Ø½á¹û¼¯
  * @param ss
  * @return
  */
-std::set<std::string> LR1Parser::GetStringFollowSet(const std::vector<std::string>& ss)
+std::set<std::string> LR1Parser::GetStringFirstSet(const std::vector<std::string>& ss)
 {
     std::set<std::string> first;
 
     if (ss.empty())
         return first;
 
-    // å½“å‰ç¬¦å·æ˜¯éç»ˆç»“ç¬¦ï¼Œä¸”å½“å‰ç¬¦å·å¯ä»¥æ¨å¯¼å‡ºç©ºï¼Œåˆ™è¿˜éœ€è¦åˆ¤æ–­ä¸‹ä¸€ä¸ªç¬¦å·
+    // µ±Ç°·ûºÅÊÇ·ÇÖÕ½á·û£¬ÇÒµ±Ç°·ûºÅ¿ÉÒÔÍÆµ¼³ö¿Õ£¬Ôò»¹ĞèÒªÅĞ¶ÏÏÂÒ»¸ö·ûºÅ
     bool still_changing = true;
     size_t idx = 0;
     while (still_changing && idx < ss.size())
     {
         still_changing = false;
-        // å½“å‰ç¬¦å·æ˜¯ç»ˆç»“ç¬¦æˆ–ç©ºï¼ŒåŠ å…¥åˆ°FIRSTé›†ä¸­
+        // µ±Ç°·ûºÅÊÇÖÕ½á·û»ò¿Õ£¬¼ÓÈëµ½FIRST¼¯ÖĞ
         if (IsTerminal(ss.at(idx)) || ss.at(idx) == "<epsilon>")
         {
             first.emplace(ss.at(idx));
@@ -559,7 +641,7 @@ std::set<std::string> LR1Parser::GetStringFollowSet(const std::vector<std::strin
         idx += 1;
     }
 
-    // å¦‚æœåˆ°è¾¾äº§ç”Ÿå¼å³éƒ¨æœ«å°¾è¿˜ä¸ºçœŸï¼Œè¯´æ˜æ•´ä¸ªä¸²å¯ä»¥æ¨å¯¼å‡ºç©ºï¼Œå°†ÎµåŠ å…¥åˆ°FIRSTé›†ä¸­
+    // Èç¹ûµ½´ï²úÉúÊ½ÓÒ²¿Ä©Î²»¹ÎªÕæ£¬ËµÃ÷Õû¸ö´®¿ÉÒÔÍÆµ¼³ö¿Õ£¬½«¦Å¼ÓÈëµ½FIRST¼¯ÖĞ
     if (still_changing)
         first.emplace("<epsilon>");
 
@@ -568,7 +650,7 @@ std::set<std::string> LR1Parser::GetStringFollowSet(const std::vector<std::strin
 
 bool LR1Parser::IsTerminal(const std::string& symbol)
 {
-    return std::find(grammar_.T.begin(), grammar_.T.end(), symbol) != grammar_.T.end();
+    return std::find(grammar_.T.begin(), grammar_.T.end(), symbol) != grammar_.T.end() || symbol == "#";
 }
 
 bool LR1Parser::IsNonTerminal(const std::string& symbol)
@@ -579,13 +661,13 @@ bool LR1Parser::IsNonTerminal(const std::string& symbol)
 bool LR1Parser::IsInLR1Items(const LR1Items& lr1Items, const LR1Item& lr1Item) const
 {
     if (std::any_of(lr1Items.items.begin(), lr1Items.items.end(), [&lr1Item](const LR1Item& item) {
-        return item.prod == lr1Item.prod && item.location == lr1Item.location;
+        return item.prod == lr1Item.prod && item.location == lr1Item.location && item.next == lr1Item.next;
     })) return true;
     return false;
 }
 
 /*!
- * åˆ¤æ–­ä¼ å…¥çš„é¡¹ç›®é›†æ˜¯å¦åœ¨é¡¹ç›®é›†è§„èŒƒæ—ä¸­ï¼Œè‹¥åœ¨è¿”å›å…¶åºå·
+ * ÅĞ¶Ï´«ÈëµÄÏîÄ¿¼¯ÊÇ·ñÔÚÏîÄ¿¼¯¹æ·¶×åÖĞ£¬ÈôÔÚ·µ»ØÆäĞòºÅ
  * @param lr1Items
  * @return
  */
@@ -598,7 +680,7 @@ size_t LR1Parser::IsInCanonicalCollection(LR1Items &lr1Items)
         if (cur_items.items.size() != lr1Items.items.size())
             continue;
 
-        // æ¯ä¸ªé¡¹ç›®éƒ½åœ¨è¯¥é¡¹ç›®é›†ä¸­ï¼Œåˆ™è®¤ä¸ºè¿™ä¸¤ä¸ªé¡¹ç›®é›†ç›¸ç­‰
+        // Ã¿¸öÏîÄ¿¶¼ÔÚ¸ÃÏîÄ¿¼¯ÖĞ£¬ÔòÈÏÎªÕâÁ½¸öÏîÄ¿¼¯ÏàµÈ
         bool flag = true;
         for (const auto& item : cur_items.items)
         {

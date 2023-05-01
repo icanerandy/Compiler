@@ -1,3 +1,5 @@
-S -> A B
-A -> a B a | <epsilon>
-B -> b A b | <epsilon>
+S -> a A d
+S -> b A c
+S -> a e c
+S -> b e d
+A -> e
