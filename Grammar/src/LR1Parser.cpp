@@ -238,7 +238,7 @@ void LR1Parser::DFA()
 //        it.assign(tmp.begin(), tmp.end());
 //    }
 
-    // 打印项目集规范族
+/*    // 打印项目集规范族
     std::cout << "\n\n\n";
     std::cout << "canonicalCollection's size is " << canonicalCollection_.items.size() << "\n";
     for (size_t i = 0; i < canonicalCollection_.items.size(); ++i)
@@ -269,7 +269,7 @@ void LR1Parser::DFA()
             }
         }
     }
-    std::cout << "---------------------------------------------------------------------\n";
+    std::cout << "---------------------------------------------------------------------\n";*/
 }
 
 void LR1Parser::CreateAnalysisTable()
@@ -365,19 +365,24 @@ void LR1Parser::Parse()
     size_t ip = 0;
     do
     {
-        std::cout << "处理第" << ip << "个token " << tokens_.at(ip).content << " ..." << std::endl;
-        std::string type = tokens_.at(ip)./*type*/content;
+        std::string symbol;
+        std::cout << "处理第" << ip << "个token " << tokens_.at(ip).type << " ... " << "(" << tokens_.at(ip).line << " , " << tokens_.at(ip).column << ")" << std::endl;
+        if (tokens_.at(ip).type == "NUM" || tokens_.at(ip).type == "ID"
+                || tokens_.at(ip).type == "IDF" || tokens_.at(ip).type == "ID1")
+            symbol = tokens_.at(ip).type;
+        else
+            symbol = tokens_.at(ip).content;
 
         size_t cur_state = state_stack.top();
-        if (action_.at(cur_state).at(type).first == "Shift")
+        if (action_.at(cur_state).at(symbol).first == "Shift")
         {
-            state_stack.emplace(action_.at(cur_state).at(type).second);
-            symbol_stack.emplace(type);
+            state_stack.emplace(action_.at(cur_state).at(symbol).second);
+            symbol_stack.emplace(symbol);
             ++ip;
         }
-        else if (action_.at(cur_state).at(type).first == "Reduce")
+        else if (action_.at(cur_state).at(symbol).first == "Reduce")
         {
-            size_t idx = action_.at(cur_state).at(type).second;
+            size_t idx = action_.at(cur_state).at(symbol).second;
             Production& prod = grammar_.prods.at(idx);
 
             size_t size = 0;
@@ -404,7 +409,7 @@ void LR1Parser::Parse()
                 state_stack.emplace(cur_state);
             }
         }
-        else if (action_.at(cur_state).at(type).first == "Accept")
+        else if (action_.at(cur_state).at(symbol).first == "Accept")
         {
             std::cout << "语法分析成功！" << std::endl;
             break;

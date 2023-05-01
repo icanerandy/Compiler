@@ -61,16 +61,19 @@ void InitFA()
 int main() {
     // InitFA();
 
-    Lexer lexer(R"(..\Grammar\TestExamples\test0.1.txt)",
+    Lexer lexer(R"(..\Lexer\test.txt)",
                 R"(..\Lexer\lexical_out.txt)");
 
-    std::vector<Token> tokens = {
-            {"a"},
-            {"b"},
-            {"a"},
-            {"b"},
-            {"#"}
-    };
+//    std::vector<Token> tokens = {
+//            {"id"},
+//            {"="},
+//            {"id"},
+//            {"="},
+//            {"id"},
+//            {"#"}
+//    };
+
+    std::vector<Token> tokens = lexer.tokens_;
     LR1Parser lr1Parser(tokens/*lexer.tokens_*/,R"(..\Grammar\GrammarRules\testGrammar.txt)", R"(..\Grammar\lr1_parse_result.txt)");
 
     getchar();

@@ -127,7 +127,7 @@ Token Lexer::Gettoken()
     if (next_char == EOF)
     {
         token.type = "EOF";
-        token.content = "EOF";
+        token.content = "#";
         token.column = column;
         token.line  = lineno;
 
