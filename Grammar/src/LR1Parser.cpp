@@ -85,6 +85,11 @@ void LR1Parser::InitGrammar()
         }
         grammar_.prods.emplace_back(prod);
     }
+
+    // 文件最后一行可能用户错误多输入了一行回车，此时要消除
+    if (grammar_.prods.at(grammar_.prods.size() - 1).left.empty())
+        grammar_.prods.pop_back();
+
     /*
      * 为什么要添加一个新的产生式？
      * 因为要将表达式转为NFA，如果开始符号对应多个产生式，则NFA的初态也会有多个
@@ -366,14 +371,25 @@ void LR1Parser::Parse()
     do
     {
         std::string symbol;
-        std::cout << "处理第" << ip << "个token " << tokens_.at(ip).type << " ... " << "(" << tokens_.at(ip).line << " , " << tokens_.at(ip).column << ")" << std::endl;
-        if (tokens_.at(ip).type == "NUM" || tokens_.at(ip).type == "ID"
-                || tokens_.at(ip).type == "IDF" || tokens_.at(ip).type == "ID1")
+        if (tokens_.at(ip).type == "MAIN_ID" || tokens_.at(ip).type == "<函数名>" || tokens_.at(ip).type == "<常量>"
+                || tokens_.at(ip).type == "<变量>" || tokens_.at(ip).type == "<常数>")
             symbol = tokens_.at(ip).type;
         else
             symbol = tokens_.at(ip).content;
 
+        std::cout << "处理第" << ip << "个token " << symbol << ":\t" << tokens_.at(ip).content
+                    << " ... " << "(" << tokens_.at(ip).line << " , " << tokens_.at(ip).column << ")" << std::endl;
+
         size_t cur_state = state_stack.top();
+
+        if (action_.at(cur_state).find(symbol) == action_.at(cur_state).end())
+        {
+            // TODO: 错误处理
+            std::cerr << "Syntax error at " << "(" << tokens_.at(ip).line << ", " << tokens_.at(ip).column << ")"
+                        << "\t" << tokens_.at(ip).content << std::endl;
+            break;
+        }
+
         if (action_.at(cur_state).at(symbol).first == "Shift")
         {
             state_stack.emplace(action_.at(cur_state).at(symbol).second);
@@ -386,8 +402,15 @@ void LR1Parser::Parse()
             Production& prod = grammar_.prods.at(idx);
 
             size_t size = 0;
-            if (!(prod.right.at(0) == "<epsilon>"))
+            if (prod.right.at(0) == "<epsilon>")
+            {
+                size = prod.right.size() - 1;
+            }
+            else
+            {
                 size = prod.right.size();
+            }
+
             for (; size >= 1; size--)
             {
                 state_stack.pop();
@@ -398,6 +421,7 @@ void LR1Parser::Parse()
             cur_state = state_stack.top();
 
             cur_state = goto_.at(cur_state).at(prod.left);
+
             if (cur_state == -1)
             {
                 // TODO: 错误处理

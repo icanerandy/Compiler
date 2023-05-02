@@ -9,7 +9,7 @@ main()
 }
 
 void invert(int m) {
-  int n;
+  int n = 1;
   if(m>0&&m<10)
     {
 

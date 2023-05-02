@@ -79,12 +79,22 @@ void Lexer::Tokenize()
 
     for (auto it = tokens_.begin(); it != tokens_.end() - 1; ++it)
     {
-        Token cur = *it;
-        Token pre = *(it + 1);
-        if (cur.type == "ID" && pre.content == "(")
-            it->type = "IDF";
-        if (cur.type == "ID" && pre.content == "=")
-            it->type = "ID1";
+        Token& cur = *it;
+        Token& pre = *(it + 1);
+
+        if (cur.type == "id" && pre.content == "(")
+        {
+            if (cur.content == "main")
+                cur.type = "MAIN_ID";
+            else
+                cur.type = "<函数名>";
+        }
+        else if (cur.type == "const" && pre.type == "id")
+            pre.type = "<常量>";
+        else if (cur.type == "id")
+            cur.type = "<变量>";
+        else if (cur.type == "num")
+            cur.type = "<常数>";
 
         out_ <<  "(" << it->line << ":" << it->column << ")\t\t" << "{" << it->content << ", " << it->type << "}\n";
     }
@@ -234,9 +244,9 @@ Token Lexer::Gettoken()
         {
             std::string content = GetMorpheme();
             if (Util::keyword_list_.find(content) != Util::keyword_list_.end())
-                token.type = "RESERVED";
+                token.type = "keyword";
             else
-                token.type = "ID";
+                token.type = "id";
             token.content = GetMorpheme();
             token.column = column;
             token.line  = lineno;
@@ -291,7 +301,7 @@ Token Lexer::Gettoken()
 
         if (deal_success)
         {
-            token.type = "NUM";
+            token.type = "num";
             token.content = GetMorpheme();
             token.column = column;
             token.line  = lineno;

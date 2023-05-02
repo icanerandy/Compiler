@@ -69,6 +69,7 @@
 
 std::unordered_map<std::string, int>
         Util::keyword_list_ = {
+        {"const", 0},
         {"return", 1},
         {"void", 2},
         {"int", 3},
@@ -77,7 +78,8 @@ std::unordered_map<std::string, int>
         {"String", 6},
         {"if", 7},
         {"else", 8},
-        {"while", 9}
+        {"while", 9},
+        {"for", 10}
 };
 
 std::unordered_map<std::string, int>
