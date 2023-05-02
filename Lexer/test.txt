@@ -1,29 +1,31 @@
 // break，continue跳转
-int read();
-void write(int);
+
 main()
 {
-    int a;
-    while (1)
+    if (a==1)
     {
-        write("请输入选择(1:break,2:continue,3:exit):\n");
-        a = read();
-        if (a == 1 || a == 2)
-        {
-            do
-            {
-                write("循环内\n");
-                if (a == 1)
-                    break;
-                if (a == 2)
-                {
-                    a = a - 1;
-                    continue;
-                }
-            } while (1);
-            write("循环外\n");
-        }
+        a = 2;
+        if (a == 1)
+        {a=1;}
+        else if (a==2)
+        {a=1;}
         else
-            break;
+            if (a==3)
+            {a=2;}
+            else if (a==3)
+            {a=2;}
+            else
+            {a=2;}
     }
+    else
+    {
+        a = 1;
+    }
+}
+
+int b(int a , String b)
+{
+    for (a = 0 ; a < 10; a=a+1)
+        while (a < 10)
+            printf("afsdf");
 }

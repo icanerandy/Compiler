@@ -24,6 +24,9 @@
  * 9            else            keyword
  * 10           do              keyword
  * 11           while           keyword
+ * 12           for             keyword
+ * 13           break           keyword
+ * 14           continue        keyword
  *
  * 100          + (ADD)         operator
  * 101          - (MINUS)       operator
@@ -61,7 +64,7 @@
  * 600          sconst          const   字符串常量
  */
 
-// RESERVED 保留字:	    return void const int float char String if else do while
+// RESERVED 保留字:	    return void const int float char String if else do while for break continue
 // BOP 布尔操作符:        &&  ||
 // COP 比较操作符:		<	<=  >	>=	==	!=
 // AOP 赋值操作符:		=   +=  -=  *=  /=  %=
@@ -82,7 +85,9 @@ std::unordered_map<std::string, int>
         {"else", 8},
         {"do", 9},
         {"while", 10},
-        {"for", 11}
+        {"for", 11},
+        {"break", 12},
+        {"continue", 13}
 };
 
 std::unordered_map<std::string, int>

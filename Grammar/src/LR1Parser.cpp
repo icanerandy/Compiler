@@ -293,6 +293,17 @@ void LR1Parser::CreateAnalysisTable()
 
                 if (IsTerminal(symbol))
                 {
+                    // 判断是否存在移进-归约冲突
+                    // 如果展望符是else，则选择移进
+                    // 让else和if就近匹配
+                    if (symbol != "else" && action_.at(i).at(symbol).first == "Reduce")
+                    {
+                        std::cerr << "存在移进-归约冲突：项目集（" << i << "）移进时冲突，" << LItem.prod.left << " -> ";
+                        for (const auto& right : LItem.prod.right)
+                            std::cerr << right << " ";
+                        std::cerr << std::endl;
+                    }
+
                     // 找到对应终结符的出边，得到其转移到的状态
                     for (size_t k = 0; k < canonicalCollection_.g.at(i).size(); ++k)
                     {
@@ -313,7 +324,8 @@ void LR1Parser::CreateAnalysisTable()
                     }
                 }
             }
-            else    // 归约项目
+            // 归约项目
+            else
             {
                 /* 接收项目 */
                 if (LItem.prod.left == grammar_.prods.at(0).left && LItem.location == LItem.prod.right.size())
@@ -322,11 +334,25 @@ void LR1Parser::CreateAnalysisTable()
                 }
                 else
                 {
+                    // 判断是否存在移进-归约冲突
+                    if (action_.at(i).at(LItem.next).first == "Shift")
+                    {
+                        // 如果展望符是else，则选择移进
+                        // 让else和if就近匹配
+                        if (LItem.next == "else")
+                            continue;
+
+                        std::cerr << "存在移进-归约冲突：项目集（" << i << "）归约时冲突，" << LItem.prod.left << " -> ";
+                        for (const auto& right : LItem.prod.right)
+                            std::cerr << right << " ";
+                        std::cerr << std::endl;
+                    }
+
                     // 找到产生式对应的序号
-                    // LR(1)一个归约项目的向前符号有多个则有多个项目除向前符号外都相同，这几个项目都会遍历到
-                    // 然后在对应的接收向前符号时归约，即接收展望符集时归约
 
                     // TODO:
+                    // LR(1)一个归约项目的向前符号有多个则有多个项目除向前符号外都相同，这几个项目都会遍历到
+                    // 然后在对应的接收向前符号时归约，即接收展望符集时归约
                     /* 这几个项目叫做同心项目，可以使用展望符的并集作为LR1项目的一部分 */
                     for (size_t k = 0; k < grammar_.prods.size(); ++k)
                     {
@@ -401,6 +427,11 @@ void LR1Parser::Parse()
         {
             size_t idx = action_.at(cur_state).at(symbol).second;
             Production& prod = grammar_.prods.at(idx);
+
+            std::cout << "选择了产生式" << prod.left << " -> ";
+            for (const auto& right : prod.right)
+                std::cout << right << " ";
+            std::cout << "进行归约" << std::endl;
 
             size_t size = 0;
             if (prod.right.at(0) == "<epsilon>")
