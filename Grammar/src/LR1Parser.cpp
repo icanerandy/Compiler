@@ -372,13 +372,14 @@ void LR1Parser::Parse()
     {
         std::string symbol;
         if (tokens_.at(ip).type == "MAIN_ID" || tokens_.at(ip).type == "<函数名>" || tokens_.at(ip).type == "<常量>"
-                || tokens_.at(ip).type == "<变量>" || tokens_.at(ip).type == "<常数>")
+                || tokens_.at(ip).type == "<变量>" || tokens_.at(ip).type == "<常数>"
+                || tokens_.at(ip).type == "<字符常量>" || tokens_.at(ip).type == "<字符串常量>")
             symbol = tokens_.at(ip).type;
         else
             symbol = tokens_.at(ip).content;
 
-        std::cout << "处理第" << ip << "个token " << symbol << ":\t" << tokens_.at(ip).content
-                    << " ... " << "(" << tokens_.at(ip).line << " , " << tokens_.at(ip).column << ")" << std::endl;
+        std::cout << "处理第" << ip << "个token " << "--- (" << tokens_.at(ip).type << ",  " << tokens_.at(ip).content << ")"
+                    << "\t\t\t行列：" << "(" << tokens_.at(ip).line << " , " << tokens_.at(ip).column << ")" << std::endl;
 
         size_t cur_state = state_stack.top();
 

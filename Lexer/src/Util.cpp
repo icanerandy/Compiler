@@ -15,51 +15,53 @@
  * 0            #               end
  * 1            return          keyword
  * 2            void            keyword
- * 3            int             keyword
- * 4            float           keyword
- * 5            char            keyword
- * 6            String          keyword
- * 7            if              keyword
- * 8            else            keyword
- * 9            while           keyword
+ * 3            const           keyword
+ * 4            int             keyword
+ * 5            float           keyword
+ * 6            char            keyword
+ * 7            String          keyword
+ * 8            if              keyword
+ * 9            else            keyword
+ * 10           do              keyword
+ * 11           while           keyword
  *
- * 10            + (ADD)         operator
- * 11           - (MINUS)       operator
- * 12           * (MUL)         operator
- * 13           / (DIV)         operator
- * 14           % (MOD)         operator
+ * 100          + (ADD)         operator
+ * 101          - (MINUS)       operator
+ * 102          * (MUL)         operator
+ * 103          / (DIV)         operator
+ * 104          % (MOD)         operator
 
- * 20           &               operator
- * 21           |               operator
+ * 105          &               operator
+ * 106          |               operator
  *
- * 22           && (AND)        operator
- * 23           || (OR)         operator
- * 24           ! (NOT)         operator
+ * 107          && (AND)        operator
+ * 108          || (OR)         operator
+ * 109          ! (NOT)         operator
  *
- * 25           < (LT)          operator
- * 26           > (GT)          operator
- * 27           = (ASSIGN)      operator
- * 28           <= (LE)         operator
- * 29           >= (GE)         operator
- * 30           == (EQ)         operator
- * 31           != (NEQ)        operator
+ * 110          < (LT)          operator
+ * 111          > (GT)          operator
+ * 112          = (ASSIGN)      operator
+ * 113          <= (LE)         operator
+ * 114          >= (GE)         operator
+ * 115          == (EQ)         operator
+ * 116          != (NEQ)        operator
  *
- * 32           ( (LP)
- * 33           ) (RP)
- * 34           [ (ARRAY)
- * 35           ] (ARRAY)
- * 36           ; (SEMICOLON)
- * 37           , (COMMA)
- * 38           { (LC)
- * 39           } (RC)
+ * 200          ( (LP)
+ * 201          ) (RP)
+ * 202          [ (ARRAY)
+ * 203          ] (ARRAY)
+ * 204          ; (SEMICOLON)
+ * 205          , (COMMA)
+ * 206          { (LC)
+ * 207          } (RC)
  *
- * 40           id              ID
- * 41           num             CONST   数字常量
- * 42           cconst          CONST   字符常量
- * 43           sconst          CONST   字符串常量
+ * 300          id              identifier
+ * 400          num             const   数字常量
+ * 500          cconst          const   字符常量
+ * 600          sconst          const   字符串常量
  */
 
-// RESERVED 保留字:	    return void int float char String if else while
+// RESERVED 保留字:	    return void const int float char String if else do while
 // BOP 布尔操作符:        &&  ||
 // COP 比较操作符:		<	<=  >	>=	==	!=
 // AOP 赋值操作符:		=   +=  -=  *=  /=  %=
@@ -69,17 +71,18 @@
 
 std::unordered_map<std::string, int>
         Util::keyword_list_ = {
-        {"const", 0},
         {"return", 1},
         {"void", 2},
+        {"const", 0},
         {"int", 3},
         {"float", 4},
         {"char", 5},
         {"String", 6},
         {"if", 7},
         {"else", 8},
-        {"while", 9},
-        {"for", 10}
+        {"do", 9},
+        {"while", 10},
+        {"for", 11}
 };
 
 std::unordered_map<std::string, int>

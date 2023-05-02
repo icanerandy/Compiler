@@ -95,6 +95,10 @@ void Lexer::Tokenize()
             cur.type = "<变量>";
         else if (cur.type == "num")
             cur.type = "<常数>";
+        else if (cur.type == "cconst")
+            cur.type = "<字符常量>";
+        else if (cur.type == "sconst")
+            cur.type = "<字符串常量>";
 
         out_ <<  "(" << it->line << ":" << it->column << ")\t\t" << "{" << it->content << ", " << it->type << "}\n";
     }
@@ -201,7 +205,7 @@ Token Lexer::Gettoken()
         deal_success = DealChar();
         if (deal_success)
         {
-            token.type = "CCONST";
+            token.type = "cconst";
             token.content = GetMorpheme();
             token.column = column;
             token.line  = lineno;
@@ -221,7 +225,7 @@ Token Lexer::Gettoken()
         deal_success = DealString();
         if (deal_success)
         {
-            token.type = "SCONST";
+            token.type = "sconst";
             token.content = GetMorpheme();
             token.column = column;
             token.line  = lineno;
