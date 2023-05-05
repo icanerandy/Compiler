@@ -74,9 +74,9 @@
 
 std::unordered_map<std::string, int>
         Util::keyword_list_ = {
-        {"return", 1},
-        {"void", 2},
-        {"const", 0},
+        {"return", 0},
+        {"void", 1},
+        {"const", 2},
         {"int", 3},
         {"float", 4},
         {"char", 5},

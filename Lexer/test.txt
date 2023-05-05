@@ -1,31 +1,12 @@
 // break£¬continueÌø×ª
-
 main()
 {
-    if (a==1)
-    {
-        a = 2;
-        if (a == 1)
-        {a=1;}
-        else if (a==2)
-        {a=1;}
-        else
-            if (a==3)
-            {a=2;}
-            else if (a==3)
-            {a=2;}
-            else
-            {a=2;}
-    }
-    else
-    {
-        a = 1;
-    }
-}
+    if (x == "hello world")
+        printf("hahahahahaha");
 
-int b(int a , String b)
-{
-    for (a = 0 ; a < 10; a=a+1)
-        while (a < 10)
-            printf("afsdf");
+    while (n < 10)
+    {
+        char v = 'a';
+        n = n + 1;
+    }
 }

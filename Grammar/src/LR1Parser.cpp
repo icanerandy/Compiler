@@ -20,8 +20,8 @@ LR1Parser::LR1Parser(const std::vector<Token>& tokens, const std::string& gramma
         system("pause");
         exit(-1);
     }
-    lr_parse_result_.open(lr_parse_result, std::ios::out);
-    if (!lr_parse_result_.is_open())
+    out_.open(lr_parse_result, std::ios::out);
+    if (!out_.is_open())
     {
         std::cerr << "输出LL(1)分析结果失败！" << std::endl;
         system("pause");
@@ -47,13 +47,66 @@ LR1Parser::LR1Parser(const std::vector<Token>& tokens, const std::string& gramma
 
     // 语法分析
     Parse();
+
+    // 打印抽象树
+    tree->RemoveEmptyNodes();
+    tree->PrettyPrint();
  }
 
 void LR1Parser::InitGrammar()
 {
     std::string line;
 
+    Production prod;
+
+    // 读入左部
+    std::getline(grammar_in_, line);
+    std::stringstream ss(line);
+    ss >> prod.left;
+
+    // 将->吞掉
+    std::string arrow;
+    ss >> arrow;
+
+    // 遍历右部符号
+    std::string symbol;
+    while (ss >> symbol)
+        prod.right.emplace_back(symbol);
+    grammar_.prods.emplace_back(prod);
+
     // 读入文法
+    while (std::getline(grammar_in_, line))
+    {
+        // 读入第一个符号
+        std::stringstream s(line);
+        std::string first_symbol;
+        s >> first_symbol;
+
+        if (first_symbol.empty())
+        {
+            continue;
+        }
+        else if (first_symbol == "|")
+        {
+            prod.right.clear();
+            while (s >> symbol)
+                prod.right.emplace_back(symbol);
+            grammar_.prods.emplace_back(prod);
+        }
+        else
+        {
+            prod.left = first_symbol;
+
+            // 将->吞掉
+            s >> arrow;
+
+            prod.right.clear();
+            while (s >> symbol)
+                prod.right.emplace_back(symbol);
+            grammar_.prods.emplace_back(prod);
+        }
+    }
+ /*   // 读入文法
     while (std::getline(grammar_in_, line))
     {
         LeftPart left;
@@ -88,7 +141,7 @@ void LR1Parser::InitGrammar()
 
     // 文件最后一行可能用户错误多输入了一行回车，此时要消除
     if (grammar_.prods.at(grammar_.prods.size() - 1).left.empty())
-        grammar_.prods.pop_back();
+        grammar_.prods.pop_back();*/
 
     /*
      * 为什么要添加一个新的产生式？
@@ -103,8 +156,8 @@ void LR1Parser::InitGrammar()
     grammar_.num = grammar_.prods.size();
 
     // 左部的都为非终结符
-    for (const auto& prod : grammar_.prods)
-        grammar_.N.emplace_back(prod.left);
+    for (const auto& production : grammar_.prods)
+        grammar_.N.emplace_back(production.left);
     // 去重
     std::vector<std::string>::iterator it, it1;
     for (it = ++grammar_.N.begin(); it != grammar_.N.end();)
@@ -118,12 +171,12 @@ void LR1Parser::InitGrammar()
 
 
     // 右部中没有在左部中出现过的符号都为终结符，注意程序将ε当作终结符
-    for (const auto& prod : grammar_.prods)
+    for (const auto& production : grammar_.prods)
     {
-        for (const auto& symbol : prod.right)
+        for (const auto& sym : production.right)
         {
-            if (std::find(grammar_.N.begin(), grammar_.N.end(), symbol) == grammar_.N.end())
-                    grammar_.T.emplace_back(symbol);
+            if (std::find(grammar_.N.begin(), grammar_.N.end(), sym) == grammar_.N.end())
+                    grammar_.T.emplace_back(sym);
         }
     }
     // 去重
@@ -384,12 +437,12 @@ void LR1Parser::CreateAnalysisTable()
 
 void LR1Parser::Parse()
 {
-    std::cout << "\n\n\n";
-    std::cout << "Syntax parsing start!" << std::endl;
-    std::cout << "---------------------------------------------------------------------\n";
+    out_ << "Syntax parsing start!\n";
+    out_ << "---------------------------------------------------------------------\n";
     /* 初始化 */
     std::stack<size_t> state_stack; // 状态栈
     std::stack<std::string> symbol_stack; // 符号栈
+    std::stack<ASTNode *> tree_node;    // 存放语法树节点
     state_stack.emplace(0);
     symbol_stack.emplace("#");
 
@@ -404,8 +457,8 @@ void LR1Parser::Parse()
         else
             symbol = tokens_.at(ip).content;
 
-        std::cout << "处理第" << ip << "个token " << "--- (" << tokens_.at(ip).type << ",  " << tokens_.at(ip).content << ")"
-                    << "\t\t\t行列：" << "(" << tokens_.at(ip).line << " , " << tokens_.at(ip).column << ")" << std::endl;
+        out_ << "处理第" << ip << "个token " << "--- (" << tokens_.at(ip).type << ",  " << tokens_.at(ip).content << ")"
+                    << "\t\t\t行列：" << "(" << tokens_.at(ip).line << " , " << tokens_.at(ip).column << ")\n";
 
         size_t cur_state = state_stack.top();
 
@@ -421,6 +474,8 @@ void LR1Parser::Parse()
         {
             state_stack.emplace(action_.at(cur_state).at(symbol).second);
             symbol_stack.emplace(symbol);
+            if (tokens_.at(ip).type == "<函数名>" || tokens_.at(ip).type == "<常量>" || tokens_.at(ip).type == "<变量>" || tokens_.at(ip).type == "<常数>" || tokens_.at(ip).type == "<字符常量>" || tokens_.at(ip).type == "<字符串常量>")
+                tree_node.emplace(MkLeaf(tokens_.at(ip)));
             ++ip;
         }
         else if (action_.at(cur_state).at(symbol).first == "Reduce")
@@ -428,12 +483,12 @@ void LR1Parser::Parse()
             size_t idx = action_.at(cur_state).at(symbol).second;
             Production& prod = grammar_.prods.at(idx);
 
-            std::cout << "选择了产生式" << prod.left << " -> ";
+            out_ << "选择了产生式" << prod.left << " -> ";
             for (const auto& right : prod.right)
-                std::cout << right << " ";
-            std::cout << "进行归约" << std::endl;
+                out_ << right << " ";
+            out_ << "进行归约\n";
 
-            size_t size = 0;
+            size_t size;
             if (prod.right.at(0) == "<epsilon>")
             {
                 size = prod.right.size() - 1;
@@ -443,11 +498,15 @@ void LR1Parser::Parse()
                 size = prod.right.size();
             }
 
+            std::vector<std::string> s;  // 记录规约了哪些符号
             for (; size >= 1; size--)
             {
                 state_stack.pop();
+                s.emplace_back(symbol_stack.top());
                 symbol_stack.pop();
             }
+            ASTNode* node = MkNode(idx, tree_node);
+            tree_node.emplace(node);
 
             symbol_stack.emplace(prod.left);
             cur_state = state_stack.top();
@@ -467,7 +526,10 @@ void LR1Parser::Parse()
         }
         else if (action_.at(cur_state).at(symbol).first == "Accept")
         {
+            out_ << "语法分析成功！\n";
             std::cout << "语法分析成功！" << std::endl;
+            auto * root = new ASTTree(tree_node.top());
+            tree = root;
             break;
         }
         else
@@ -477,7 +539,8 @@ void LR1Parser::Parse()
             break;
         }
     } while (true);
-    std::cout << "---------------------------------------------------------------------\n";
+    out_ << "---------------------------------------------------------------------\n";
+    out_.flush();
 }
 
 void LR1Parser::Closure(LR1Items& lr1Items)
@@ -768,6 +831,1021 @@ size_t LR1Parser::IsInCanonicalCollection(LR1Items &lr1Items)
         }
     }
     return 0;
+}
+
+ASTNode *LR1Parser::MkLeaf(const Token& token)
+{
+    auto * node = new ASTNode();
+    node->ast_name_ = token.content;
+
+    node->type_ = token.type;
+    node->content_ = token.content;
+    node->line_no_ = token.line;
+    node->column_no_ = token.column;
+
+    return node;
+}
+
+ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
+{
+    auto * node = new ASTNode();
+
+    size_t size_of_prod = grammar_.prods.at(idx).right.size();
+
+    ASTNode * tmp;
+
+    switch (idx)
+    {
+        // TODO: 空串归约？
+        case 0: /* 0. <程序>’ -> <程序> # */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 1: /* 1. <程序> -> <声明语句列表> <MAIN函数定义> <函数定义列表> */
+        {
+            node->ast_name_ = "程序";
+
+            ASTNode * func_def_list = tree_node.top();  // 函数定义列表
+            tree_node.pop();
+
+            while (func_def_list)
+            {
+                node->children_.emplace_back(func_def_list);
+                func_def_list = func_def_list->next_;
+            }
+
+            ASTNode * main_def = tree_node.top();   // MAIN函数定义
+            tree_node.pop();
+            node->children_.emplace_front(main_def);
+
+            ASTNode * declaration_list = tree_node.top();   // 声明语句列表
+            tree_node.pop();
+
+            while (declaration_list)
+            {
+                node->children_.emplace_back(declaration_list);
+                declaration_list = declaration_list->next_;
+            }
+        }
+            break;
+        case 2: /* 2. <MAIN函数定义> -> MAIN_ID ( ) <复合语句> */
+        {
+            node->ast_name_ = "MAIN函数定义";
+
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+        }
+            break;
+        case 3: /* 3. <声明语句列表> -> <声明语句> <声明语句列表> */
+        {
+            ASTNode * declaration_list = tree_node.top();   // 声明语句列表
+            tree_node.pop();
+
+            ASTNode * declaration  = tree_node.top();   // 声明语句
+            tree_node.pop();
+
+            declaration->next_ = declaration_list;
+
+            node = declaration;
+        }
+            break;
+        case 4: /* 4. <声明语句列表> -> <epsilon> */
+        {
+            node = nullptr;
+        }
+            break;
+        case 5: /* 5. <函数定义列表> -> <函数定义> <函数定义列表> */
+        {
+            ASTNode * func_def_list = tree_node.top();  // 函数定义列表
+            tree_node.pop();
+
+            ASTNode * func_def = tree_node.top();   // 函数定义
+            tree_node.pop();
+
+            func_def->next_ = func_def_list;
+
+            node = func_def;
+        }
+            break;
+        case 6: /* 6. <函数定义列表> -> <epsilon> */
+        {
+            return nullptr;
+        }
+            break;
+        case 7: /* 7. <函数定义> -> <函数类型> <函数名> ( <函数定义形参列表> ) <复合语句> */
+        {
+            node->ast_name_ = "函数定义";
+
+            ASTNode * compound_stmt = tree_node.top();
+            tree_node.pop();
+
+            ASTNode * func_def_args_list = tree_node.top();
+            tree_node.pop();
+
+            ASTNode * func_name = tree_node.top();
+            tree_node.pop();
+
+            ASTNode * type = tree_node.top();
+            tree_node.pop();
+
+            node->children_.emplace_front(compound_stmt);
+            node->children_.emplace_front(func_def_args_list);
+            node->children_.emplace_front(func_name);
+            node->children_.emplace_front(type);
+        }
+            break;
+        case 8: /* 8. <函数定义形参列表> -> <函数定义形参> */
+        {
+            node->ast_name_ = "函数定义形参列表";
+
+            tmp = tree_node.top();
+            tree_node.pop();
+
+            while (tmp)
+            {
+                node->children_.emplace_back(tmp);
+                tmp = tmp->next_;
+            }
+        }
+            break;
+        case 9: /* 9. <函数定义形参列表> -> <epsilon> */
+        {
+            return nullptr;
+        }
+            break;
+        case 10: /* 10. <函数定义形参> -> <数据类型> <变量> */
+        {
+            ASTNode * var = tree_node.top();    // 变量
+            tree_node.pop();
+
+            ASTNode * type = tree_node.top();   // 数据类型
+            tree_node.pop();
+
+            type->children_.emplace_front(var);
+
+            node = type;
+        }
+            break;
+        case 11: /* 11. <函数定义形参> -> <数据类型> <变量> , <函数定义形参> */
+        {
+            ASTNode * func_args = tree_node.top();  // 函数定义形参
+            tree_node.pop();
+
+            ASTNode * var = tree_node.top();    // 变量
+            tree_node.pop();
+
+            ASTNode * type = tree_node.top();   // 数据类型
+            tree_node.pop();
+
+            type->children_.emplace_front(var);
+
+            type->next_ = func_args;
+
+            node = type;
+        }
+            break;
+        case 12: /* 12. <复合语句> -> { <语句表> } */
+        {
+            node->ast_name_ = "复合语句";
+
+            ASTNode * stmt_table = tree_node.top();
+            tree_node.pop();
+
+            while (stmt_table)
+            {
+                node->children_.emplace_back(stmt_table);
+                stmt_table = stmt_table->next_;
+            }
+        }
+            break;
+        case 13: /* 13. <语句表> -> <语句> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 14: /* 14. <语句表> -> <语句> <语句表> */
+        {
+            ASTNode * stmt_table = tree_node.top();
+            tree_node.pop();
+
+            ASTNode * stmt = tree_node.top();
+            tree_node.pop();
+
+            stmt->next_ = stmt_table;
+
+            node =  stmt;
+        }
+            break;
+        case 15: /* 15. <执行语句> -> <数据处理语句>  */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 16: /* 16. <执行语句> -> <控制语句> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 17: /* 17. <数据处理语句> -> <表达式> ; */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 18: /* 18. <控制语句> -> <if语句> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 19: /* 19. <控制语句> -> <for语句> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 20: /* 20. <控制语句> -> <while语句> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 21: /* 21. <控制语句> -> <do-while语句> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 22: /* 22. <控制语句> -> <return语句> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 23: /* 23. <if语句> -> if ( <表达式> ) <循环语句> <if-tail> */
+        {
+            node->ast_name_ = "if语句";
+
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+        }
+            break;
+        case 24: /* 24. <if-tail> -> else <循环语句> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 25: /* 25. <if-tail> -> <epsilon> */
+        {
+            return nullptr;
+        }
+            break;
+        case 26: /* 26. <for语句> -> for ( <表达式> ; <表达式> ; <表达式> ) <循环语句> */
+        {
+            node->ast_name_ = "for语句";
+
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+        }
+            break;
+        case 27: /* 27. <while语句> -> while ( <表达式> ) <循环语句> */
+        {
+            node->ast_name_ = "while语句";
+
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+        }
+            break;
+        case 28: /* 28. <do-while语句> -> do <循环用复合语句> while ( <表达式> ) ; */
+        {
+            node->ast_name_ = "do-while语句";
+
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+        }
+            break;
+        case 29: /* 29. <循环语句> -> <声明语句> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 30: /* 30. <循环语句> -> <循环执行语句> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 31: /* 31. <循环语句> -> <循环用复合语句> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 32: /* 32. <循环用复合语句> -> { <循环语句表> } */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 33: /* 33. <循环语句表> -> <循环语句> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 34: /* 34. <循环语句表> -> <循环语句> <循环语句表> */
+        {
+            node->ast_name_ = "循环语句表";
+
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+        }
+            break;
+        case 35: /* 35. <循环执行语句> -> <if语句> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 36: /* 36. <循环执行语句> -> <for语句> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 37: /* 37. <循环执行语句> -> <while语句> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 38: /* 38. <循环执行语句> -> <do-while语句> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 39: /* 39. <循环执行语句> -> <return语句> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 40: /* 40. <循环执行语句> -> <break语句> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 41: /* 41. <循环执行语句> -> <continue语句> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 42: /* 42. <循环执行语句> -> <数据处理语句> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 43: /* 43. <return语句> -> return ; */
+        {
+            node->ast_name_ = "return语句";
+        }
+            break;
+        case 44: /* 44. <return语句> -> return <表达式> ; */
+        {
+            node->ast_name_ = "return语句";
+
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+        }
+            break;
+        case 45: /* 45. <break语句> -> break ; */
+        {
+            node->ast_name_ = "break语句";
+        }
+            break;
+        case 46: /* 46. <continue语句> -> continue ; */
+        {
+            node->ast_name_ = "continue语句";
+        }
+            break;
+        case 47: /* 47. <语句> -> <声明语句> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 48: /* 48. <语句> -> <执行语句> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 49: /* 49. <声明语句> -> <值声明> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 50: /* 50. <声明语句> -> <函数声明> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 51: /* 51. <值声明> -> <常量声明> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 52: /* 52. <值声明> -> <变量声明> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 53: /* 53. <常量声明> -> const <数据类型> <常量声明表> */
+        {
+            node->ast_name_ = "常量声明";
+
+            ASTNode * table = tree_node.top();  // 常量声明表
+            tree_node.pop();
+
+            ASTNode * type = tree_node.top();   // 数据类型
+            tree_node.pop();
+
+            while (table)
+            {
+                type->children_.emplace_front(table);
+                table = table->next_;
+            }
+
+            node->children_.emplace_front(type);
+        }
+            break;
+        case 54: /* 54. <数据类型> -> int */
+        {
+            node->ast_name_ = "int";
+        }
+            break;
+        case 55: /* 55. <数据类型> -> float */
+        {
+            node->ast_name_ = "float";
+        }
+            break;
+        case 56: /* 56. <数据类型> -> char */
+        {
+            node->ast_name_ = "char";
+        }
+            break;
+        case 57: /* 57. <数据类型> -> String */
+        {
+            node->ast_name_ = "String";
+        }
+            break;
+        case 58: /* 58. <常量声明表> -> <常量> = <常数> ; */
+        {
+            node->ast_name_ = "=";
+
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+        }
+            break;
+        case 59: /* 59. <常量声明表> -> <常量> = <常数> , <常量声明表> */
+        {
+            ASTNode * table = tree_node.top();  // 常量声明表
+            tree_node.pop();
+
+            ASTNode * const_num = tree_node.top();   // 常数
+            tree_node.pop();
+
+            ASTNode * const_var = tree_node.top();  // 常量
+            tree_node.pop();
+
+            node = new ASTNode();
+            node->ast_name_ = "=";
+            node->children_.emplace_front(const_num);
+            node->children_.emplace_front(const_var);
+
+            node->next_ = table;
+        }
+            break;
+        case 60: /* 60. <变量声明> -> <数据类型> <变量声明表> */
+        {
+            node->ast_name_ = "变量声明";
+
+            ASTNode * table = tree_node.top();  // 变量声明表
+            tree_node.pop();
+
+            ASTNode * type = tree_node.top();   // 数据类型
+            tree_node.pop();
+
+            while (table)
+            {
+                type->children_.emplace_back(table);
+                table = table->next_;
+            }
+
+            node->children_.emplace_front(type);
+        }
+            break;
+        case 61: /* 61. <变量声明表> -> <单变量声明> ; */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 62: /* 62. <变量声明表> -> <单变量声明> , <变量声明表> */
+        {
+            ASTNode * table = tree_node.top();  // 变量声明表
+            tree_node.pop();
+
+            ASTNode * single_decl = tree_node.top();  // 单变量声明
+            tree_node.pop();
+
+            single_decl->next_ = table;
+
+            node = single_decl;
+        }
+            break;
+        case 63: /* 63. <单变量声明> -> <变量> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 64: /* 64. <单变量声明> -> <变量> = <布尔表达式> */
+        {
+            node->ast_name_ = "=";
+
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+        }
+            break;
+        case 65: /* 65. <函数声明> -> <函数类型> <函数名> ( <函数声明形参列表> ) ; */
+        {
+            node->ast_name_ = "函数声明";
+
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+        }
+            break;
+        case 66: /* 66. <函数类型> -> <数据类型> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 67: /* 67. <函数类型> -> void*/
+        {
+            node->ast_name_ = "void";
+        }
+            break;
+        case 68: /* 68. <函数声明形参列表> -> <函数声明形参> */
+        {
+            node->ast_name_ = "函数声明形参列表";
+
+            ASTNode * func_args = tree_node.top();
+            tree_node.pop();
+
+            while (func_args)
+            {
+                node->children_.emplace_back(func_args);
+                func_args = func_args->next_;
+            }
+        }
+            break;
+        case 69: /* 69. <函数声明形参列表> -> <epsilon> */
+        {
+            return nullptr;
+        }
+            break;
+        case 70: /* 70. <函数声明形参> -> <数据类型> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 71: /* 71. <函数声明形参> -> <数据类型> , <函数声明形参> */
+        {
+            ASTNode * func_args = tree_node.top();  // 函数声明形参
+            tree_node.pop();
+
+            ASTNode * type = tree_node.top();   // 数据类型
+            tree_node.pop();
+
+            type->next_ = func_args;
+
+            node = type;
+        }
+            break;
+        case 72: /* 72. <表达式> -> <赋值表达式> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 73: /* 73. <表达式> -> <简单表达式> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 74: /* 74. <简单表达式> -> <布尔表达式> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 75: /* 75. <赋值表达式> -> <变量> = <布尔表达式> */
+        {
+            node->ast_name_ = "=";
+
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+        }
+            break;
+        case 76: /* 76. <布尔表达式> -> <布尔表达式> || <布尔项> */
+        {
+            node->ast_name_ = "||";
+
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+        }
+            break;
+        case 77: /* 77. <布尔表达式> -> <布尔项> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 78: /* 78. <布尔项> -> <布尔项> && <布尔因子> */
+        {
+            node->ast_name_ = "&&";
+
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+        }
+            break;
+        case 79: /* 79. <布尔项> -> <布尔因子> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 80: /* 80. <布尔因子> -> ! <布尔因子> */
+        {
+            node->ast_name_ = "!";
+
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+        }
+            break;
+        case 81: /* 81. <布尔因子> -> <关系表达式> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 82: /* 82. <关系表达式> -> <算术表达式> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 83: /* 83. <关系表达式> -> <算术表达式> <关系运算符> <算术表达式> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->ast_name_ = tmp->ast_name_;
+
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+        }
+            break;
+        case 84: /* 84. <关系运算符> -> > */
+        {
+            node->ast_name_ = ">";
+        }
+            break;
+        case 85: /* 85. <关系运算符> -> < */
+        {
+            node->ast_name_ = "<";
+        }
+            break;
+        case 86: /* 86. <关系运算符> -> >= */
+        {
+            node->ast_name_ = ">=";
+        }
+            break;
+        case 87: /* 87. <关系运算符> -> <= */
+        {
+            node->ast_name_ = "<=";
+        }
+            break;
+        case 88: /* 88. <关系运算符> -> == */
+        {
+            node->ast_name_ = "==";
+        }
+            break;
+        case 89: /* 89. <关系运算符> -> != */
+        {
+            node->ast_name_ = "!=";
+        }
+            break;
+        case 90: /* 90. <算术表达式> -> <项> + <算术表达式> */
+        {
+            node->ast_name_ = "+";
+
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+        }
+            break;
+        case 91: /* 91. <算术表达式> -> <项> - <算术表达式> */
+        {
+            node->ast_name_ = "-";
+
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+        }
+            break;
+        case 92: /* 92. <算术表达式> -> <项> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 93: /* 93. <项> -> <因子> * <项> */
+        {
+            node->ast_name_ = "*";
+
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+        }
+            break;
+        case 94: /* 94. <项> -> <因子> / <项> */
+        {
+            node->ast_name_ = "/";
+
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+        }
+            break;
+        case 95: /* 95. <项> -> <因子> % <项> */
+        {
+            node->ast_name_ = "%";
+
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+        }
+            break;
+        case 96: /* 96. <项> -> <因子> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 97: /* 97. <因子> -> ( <算术表达式> ) */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 98: /* 98. <因子> -> <常数> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 99: /* 99. <因子> -> <字符常量> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 100: /* 100. <因子> -> <字符串常量> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 101: /* 101. <因子> -> <变量> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 102: /* 102. <因子> -> <函数调用> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 103: /* 103. <函数调用>  -> <函数名> ( <实参列表> ) */
+        {
+            node->ast_name_ = "函数调用";
+
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+        }
+            break;
+        case 104: /* 104. <实参列表> -> <表达式> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node = tmp;
+        }
+            break;
+        case 105: /* 105. <实参列表> -> <表达式> , <实参列表> */
+        {
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+
+            tmp = tree_node.top();
+            tree_node.pop();
+            node->children_.emplace_front(tmp);
+        }
+            break;
+        case 106: /* 106. <实参列表> -> <epsilon> */
+        {
+            return nullptr;
+        }
+            break;
+        default:
+            break;
+    }
+
+    return node;
 }
 
 LR1Parser::~LR1Parser()

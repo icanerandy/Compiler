@@ -65,7 +65,7 @@ int main() {
                 R"(..\Lexer\lexical_out.txt)");
 
     std::vector<Token> tokens = lexer.tokens_;
-    LR1Parser lr1Parser(tokens,R"(..\Grammar\GrammarRules\grammar.txt)", R"(..\Grammar\lr1_parse_result.txt)");
+    LR1Parser lr1Parser(tokens,R"(..\Grammar\GrammarRules\testGrammar.txt)", R"(..\Grammar\lr1_parse_result.txt)");
 
     getchar();
     return 0;

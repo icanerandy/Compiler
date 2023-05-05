@@ -16,67 +16,68 @@
 #include <vector>
 #include <map>
 #include <set>
+#include <list>
 #include <queue>
 #include <fstream>
 #include <iostream>
 #include <sstream>
 #include <algorithm>
+
 #include "include/Lexer.h"
-
-using LeftPart = std::string;
-using RightPart = std::vector<std::string>;
-
-struct Production
-{
-    LeftPart left;
-    RightPart right;
-
-    bool operator==(const Production& rhs) const
-    {
-        if (left != rhs.left)
-            return false;
-        if (right.size() != rhs.right.size())
-            return false;
-        for (size_t i = 0; i < right.size(); ++i)
-        {
-            if (rhs.right.at(i) != right.at(i))
-                return false;
-        }
-        return true;
-    }
-};
-
-struct Grammar
-{
-    size_t num; // äº§ç”Ÿå¼æ•°é‡
-    std::vector<std::string> T; // ç»ˆç»“ç¬¦
-    std::vector<std::string> N; // éç»ˆç»“ç¬¦
-    std::vector<Production> prods;  // äº§ç”Ÿå¼
-};
-
-// LR1é¡¹ç›®
-struct LR1Item
-{
-    Production prod;
-    size_t location{};  // ç‚¹æ‰€åœ¨çš„ä½ç½®
-    std::string next;   // å±•æœ›ç¬¦é›†
-};
-
-// LR0é¡¹ç›®é›†
-struct LR1Items
-{
-    std::vector<LR1Item> items{};
-};
-
-// LR0é¡¹ç›®é›†è§„èŒƒæ—
-struct CanonicalCollection
-{
-    std::vector<LR1Items> items;    // é¡¹ç›®é›†é›†åˆ
-    std::map<size_t, std::vector< std::pair<std::string, size_t> >> g;   // ä¿å­˜DFAçš„å›¾ï¼Œfirstæ˜¯ç»è¿‡ä»€ä¹ˆè½¬ç§»ï¼Œsecondæ˜¯è½¬ç§»åˆ°çš„çŠ¶æ€ç¼–å·
-};
+#include "include/AST.h"
 
 class LR1Parser
 {
+private:
+    using LeftPart = std::string;
+    using RightPart = std::vector<std::string>;
+
+    struct Production
+    {
+        LeftPart left;
+        RightPart right;
+
+        bool operator==(const Production& rhs) const
+        {
+            if (left != rhs.left)
+                return false;
+            if (right.size() != rhs.right.size())
+                return false;
+            for (size_t i = 0; i < right.size(); ++i)
+            {
+                if (rhs.right.at(i) != right.at(i))
+                    return false;
+            }
+            return true;
+        }
+    };
+
+    struct Grammar
+    {
+        size_t num; // ²úÉúÊ½ÊıÁ¿
+        std::vector<std::string> T; // ÖÕ½á·û
+        std::vector<std::string> N; // ·ÇÖÕ½á·û
+        std::vector<Production> prods;  // ²úÉúÊ½
+    };
+
+    struct LR1Item
+    {
+        Production prod;
+        size_t location{};  // µãËùÔÚµÄÎ»ÖÃ
+        std::string next;   // Õ¹Íû·û¼¯
+    };
+
+    struct LR1Items
+    {
+        std::vector<LR1Item> items{};
+    };
+
+    struct CanonicalCollection
+    {
+        std::vector<LR1Items> items;    // ÏîÄ¿¼¯¼¯ºÏ
+        std::map<size_t, std::vector< std::pair<std::string, size_t> >> g;   // ±£´æDFAµÄÍ¼£¬firstÊÇ¾­¹ıÊ²Ã´×ªÒÆ£¬secondÊÇ×ªÒÆµ½µÄ×´Ì¬±àºÅ
+    };
+
 public:
     explicit LR1Parser(const std::vector<Token>& tokens, const std::string& grammar_in, const std::string& lr_parse_result);
     ~LR1Parser();
@@ -98,13 +99,19 @@ private:
     bool IsInLR1Items(const LR1Items& LR1Items, const LR1Item& LR1Item) const;
     size_t IsInCanonicalCollection(LR1Items& LR1Items);
 
+private:
+    ASTNode * MkLeaf(const Token& token);
+    ASTNode * MkNode(size_t idx, std::stack<ASTNode *>& tree_node);
+
+private:
+    ASTTree* tree;
 
 private:
     std::vector<Token> tokens_;
     Grammar grammar_;
     CanonicalCollection canonicalCollection_;
-    std::queue< std::pair<LR1Items, size_t> > Q;    // DFAé˜Ÿåˆ—ï¼Œç”¨äºå­˜å‚¨å¾…è½¬ç§»çš„æœ‰æ•ˆé¡¹ç›®é›†
-    // map<ç°åœ¨çš„çŠ¶æ€, map<æ¥æ”¶ç¬¦å·, pair<(ç§»è¿›ï¼Œå½’çº¦ï¼Œæ¥æ”¶), è½¬ç§»çŠ¶æ€>>>
+    std::queue< std::pair<LR1Items, size_t> > Q;    // DFA¶ÓÁĞ£¬ÓÃÓÚ´æ´¢´ı×ªÒÆµÄÓĞĞ§ÏîÄ¿¼¯
+    // map<ÏÖÔÚµÄ×´Ì¬, map<½ÓÊÕ·ûºÅ, pair<(ÒÆ½ø£¬¹éÔ¼£¬½ÓÊÕ), ×ªÒÆ×´Ì¬>>>
     std::map<size_t, std::map<std::string, std::pair<std::string, size_t>>> action_;
     std::map<size_t, std::map<std::string, size_t>> goto_;
 
@@ -114,7 +121,8 @@ private:
 
 private:
     std::ifstream grammar_in_;
-    std::ofstream lr_parse_result_;
+    std::ofstream out_;
+
 };
 
 

@@ -89,8 +89,8 @@ void Lexer::Tokenize()
             else
                 cur.type = "<函数名>";
         }
-        else if (cur.type == "const" && pre.type == "id")
-            pre.type = "<常量>";
+        else if (cur.type == "keyword" && cur.content == "const")
+            (it+2)->type = "<常量>";
         else if (cur.type == "id")
             cur.type = "<变量>";
         else if (cur.type == "num")
