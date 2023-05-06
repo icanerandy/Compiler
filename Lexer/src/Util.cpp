@@ -93,7 +93,8 @@ std::unordered_map<std::string, int>
 std::unordered_map<std::string, int>
         Util::BOP = {
         {"&&", 10},
-        {"||", 11}
+        {"||", 11},
+        {"!", 12}
 };
 
 std::unordered_map<std::string, int>

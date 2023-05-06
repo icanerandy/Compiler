@@ -1,12 +1,29 @@
 // break£¬continueÌø×ª
+
+int a;
+const int const_num = 10;
+
+int func1(char, int);
+
 main()
 {
+    char  a, b = 'y', c, d = 'x';
+    int num = sum();
     if (x == "hello world")
         printf("hahahahahaha");
 
+    x = 10;
+    int y = 20;
     while (n < 10)
     {
         char v = 'a';
         n = n + 1;
     }
+}
+
+char return_ch(String str)
+{
+    const int a = 10;
+    char ch = 'a';
+    return ch;
 }

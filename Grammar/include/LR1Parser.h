@@ -81,6 +81,7 @@ private:
 public:
     explicit LR1Parser(const std::vector<Token>& tokens, const std::string& grammar_in, const std::string& lr_parse_result);
     ~LR1Parser();
+    ASTTree * GetAST();
 
 private:
     void InitGrammar();

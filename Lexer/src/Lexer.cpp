@@ -328,7 +328,7 @@ Token Lexer::Gettoken()
         if (deal_success)
         {
             op = GetMorpheme();
-            // BOP 布尔操作符: &&  ||
+            // BOP 布尔操作符: &&  || !
             // COP 比较操作符: <	<=  >	>=	==	!=
             // AOP 赋值操作符: =   +=  -=  *=  /=  %=
             // OOP 运算操作符: +	-	*	/   %     &   |

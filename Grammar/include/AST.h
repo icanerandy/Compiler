@@ -40,6 +40,7 @@ public:
     std::string ast_name_;
 
     std::list<ASTNode *> children_;
+    struct ASTNode * pre_;
     struct ASTNode * next_;
     struct ASTNode * parent_;
 

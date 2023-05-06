@@ -908,6 +908,8 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
             ASTNode * declaration  = tree_node.top();   // 声明语句
             tree_node.pop();
 
+            if (declaration_list)
+                declaration_list->pre_ = declaration;
             declaration->next_ = declaration_list;
 
             node = declaration;
@@ -926,6 +928,8 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
             ASTNode * func_def = tree_node.top();   // 函数定义
             tree_node.pop();
 
+            if (func_def_list)
+                func_def_list->pre_ = func_def;
             func_def->next_ = func_def_list;
 
             node = func_def;
@@ -951,6 +955,21 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
 
             ASTNode * type = tree_node.top();
             tree_node.pop();
+
+            compound_stmt->pre_ = func_def_args_list;
+            if (func_def_args_list)
+                func_def_args_list->pre_ = func_name;
+            func_name->pre_ = type;
+            type->next_ = func_name;
+            if (func_def_args_list)
+            {
+                func_name->next_ = func_def_args_list;
+                func_def_args_list->next_ = compound_stmt;
+            }
+            else
+            {
+                func_name->next_ = compound_stmt;
+            }
 
             node->children_.emplace_front(compound_stmt);
             node->children_.emplace_front(func_def_args_list);
@@ -1003,6 +1022,8 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
 
             type->children_.emplace_front(var);
 
+            if (func_args)
+                func_args->pre_ = type;
             type->next_ = func_args;
 
             node = type;
@@ -1037,9 +1058,10 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
             ASTNode * stmt = tree_node.top();
             tree_node.pop();
 
+            stmt_table->pre_ = stmt;
             stmt->next_ = stmt_table;
 
-            node =  stmt;
+            node = stmt;
         }
             break;
         case 15: /* 15. <执行语句> -> <数据处理语句>  */
@@ -1102,17 +1124,24 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
         {
             node->ast_name_ = "if语句";
 
-            tmp = tree_node.top();
+            ASTNode * tail = tree_node.top();
             tree_node.pop();
-            node->children_.emplace_front(tmp);
 
-            tmp = tree_node.top();
+            ASTNode * stmt = tree_node.top();
             tree_node.pop();
-            node->children_.emplace_front(tmp);
 
-            tmp = tree_node.top();
+            ASTNode * exp = tree_node.top();
             tree_node.pop();
-            node->children_.emplace_front(tmp);
+
+            if (tail)
+                tail->pre_ = stmt;
+            stmt->pre_ = exp;
+            exp->next_ = stmt;
+            stmt->next_ = tail;
+
+            node->children_.emplace_front(tail);
+            node->children_.emplace_front(stmt);
+            node->children_.emplace_front(exp);
         }
             break;
         case 24: /* 24. <if-tail> -> else <循环语句> */
@@ -1131,47 +1160,61 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
         {
             node->ast_name_ = "for语句";
 
-            tmp = tree_node.top();
+            ASTNode * stmt = tree_node.top();
             tree_node.pop();
-            node->children_.emplace_front(tmp);
 
-            tmp = tree_node.top();
+            ASTNode * exp1 = tree_node.top();
             tree_node.pop();
-            node->children_.emplace_front(tmp);
 
-            tmp = tree_node.top();
+            ASTNode * exp2 = tree_node.top();
             tree_node.pop();
-            node->children_.emplace_front(tmp);
 
-            tmp = tree_node.top();
+            ASTNode * exp3 = tree_node.top();
             tree_node.pop();
-            node->children_.emplace_front(tmp);
+
+            stmt->pre_ = exp1;
+            exp1->pre_ = exp2;
+            exp2->pre_ = exp3;
+            exp3->next_ = exp2;
+            exp2->next_ = exp1;
+            exp1->next_ = stmt;
+
+            node->children_.emplace_front(stmt);
+            node->children_.emplace_front(exp1);
+            node->children_.emplace_front(exp2);
+            node->children_.emplace_front(exp3);
         }
             break;
         case 27: /* 27. <while语句> -> while ( <表达式> ) <循环语句> */
         {
             node->ast_name_ = "while语句";
 
-            tmp = tree_node.top();
+            ASTNode * stmt = tree_node.top();
             tree_node.pop();
-            node->children_.emplace_front(tmp);
 
-            tmp = tree_node.top();
+            ASTNode * exp = tree_node.top();
             tree_node.pop();
-            node->children_.emplace_front(tmp);
+
+            stmt->pre_ = exp;
+            exp->next_ = stmt;
+            node->children_.emplace_front(stmt);
+            node->children_.emplace_front(exp);
         }
             break;
         case 28: /* 28. <do-while语句> -> do <循环用复合语句> while ( <表达式> ) ; */
         {
             node->ast_name_ = "do-while语句";
 
-            tmp = tree_node.top();
+            ASTNode * exp = tree_node.top();
             tree_node.pop();
-            node->children_.emplace_front(tmp);
 
-            tmp = tree_node.top();
+            ASTNode * compound_stmt = tree_node.top();
             tree_node.pop();
-            node->children_.emplace_front(tmp);
+
+            exp->pre_ = compound_stmt;
+            compound_stmt->next_ = exp;
+            node->children_.emplace_front(exp);
+            node->children_.emplace_front(compound_stmt);
         }
             break;
         case 29: /* 29. <循环语句> -> <声明语句> */
@@ -1213,13 +1256,16 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
         {
             node->ast_name_ = "循环语句表";
 
-            tmp = tree_node.top();
+            ASTNode * table = tree_node.top();
             tree_node.pop();
-            node->children_.emplace_front(tmp);
 
-            tmp = tree_node.top();
+            ASTNode * stmt = tree_node.top();
             tree_node.pop();
-            node->children_.emplace_front(tmp);
+
+            table->pre_ = stmt;
+            stmt->next_ =  table;
+            node->children_.emplace_front(table);
+            node->children_.emplace_front(stmt);
         }
             break;
         case 35: /* 35. <循环执行语句> -> <if语句> */
@@ -1287,9 +1333,9 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
         {
             node->ast_name_ = "return语句";
 
-            tmp = tree_node.top();
+            ASTNode * exp = tree_node.top();
             tree_node.pop();
-            node->children_.emplace_front(tmp);
+            node->children_.emplace_front(exp);
         }
             break;
         case 45: /* 45. <break语句> -> break ; */
@@ -1385,15 +1431,20 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
             break;
         case 58: /* 58. <常量声明表> -> <常量> = <常数> ; */
         {
-            node->ast_name_ = "=";
+            node->ast_name_ = "初始化";
+            node->type_ = "AOP";
 
-            tmp = tree_node.top();
+            ASTNode * const_num = tree_node.top();
             tree_node.pop();
-            node->children_.emplace_front(tmp);
 
-            tmp = tree_node.top();
+            ASTNode * const_var = tree_node.top();
             tree_node.pop();
-            node->children_.emplace_front(tmp);
+
+            const_num->pre_ = const_var;
+            const_var->next_ = const_num;
+
+            node->children_.emplace_front(const_num);
+            node->children_.emplace_front(const_var);
         }
             break;
         case 59: /* 59. <常量声明表> -> <常量> = <常数> , <常量声明表> */
@@ -1401,18 +1452,23 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
             ASTNode * table = tree_node.top();  // 常量声明表
             tree_node.pop();
 
+            auto * new_table = new ASTNode();
+            new_table->ast_name_ = "初始化";
+            new_table->type_ = "AOP";
             ASTNode * const_num = tree_node.top();   // 常数
             tree_node.pop();
-
             ASTNode * const_var = tree_node.top();  // 常量
             tree_node.pop();
 
-            node = new ASTNode();
-            node->ast_name_ = "=";
-            node->children_.emplace_front(const_num);
-            node->children_.emplace_front(const_var);
+            const_num->pre_ = const_var;
+            const_var->next_ = const_num;
+            new_table->children_.emplace_front(const_num);
+            new_table->children_.emplace_front(const_var);
 
-            node->next_ = table;
+            table->pre_ = new_table;
+            new_table->next_ = table;
+
+            node = new_table;
         }
             break;
         case 60: /* 60. <变量声明> -> <数据类型> <变量声明表> */
@@ -1449,6 +1505,7 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
             ASTNode * single_decl = tree_node.top();  // 单变量声明
             tree_node.pop();
 
+            table->pre_ = single_decl;
             single_decl->next_ = table;
 
             node = single_decl;
@@ -1463,32 +1520,42 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
             break;
         case 64: /* 64. <单变量声明> -> <变量> = <布尔表达式> */
         {
-            node->ast_name_ = "=";
+            node->ast_name_ = "初始化";
 
-            tmp = tree_node.top();
+            ASTNode * bool_exp = tree_node.top();
             tree_node.pop();
-            node->children_.emplace_front(tmp);
 
-            tmp = tree_node.top();
+            ASTNode * var = tree_node.top();
             tree_node.pop();
-            node->children_.emplace_front(tmp);
+
+            bool_exp->pre_ = var;
+            var->next_ = bool_exp;
+            node->children_.emplace_front(bool_exp);
+            node->children_.emplace_front(var);
         }
             break;
         case 65: /* 65. <函数声明> -> <函数类型> <函数名> ( <函数声明形参列表> ) ; */
         {
             node->ast_name_ = "函数声明";
 
-            tmp = tree_node.top();
+            ASTNode * func_args_list = tree_node.top();
             tree_node.pop();
-            node->children_.emplace_front(tmp);
 
-            tmp = tree_node.top();
+            ASTNode * func_name = tree_node.top();
             tree_node.pop();
-            node->children_.emplace_front(tmp);
 
-            tmp = tree_node.top();
+            ASTNode * type = tree_node.top();
             tree_node.pop();
-            node->children_.emplace_front(tmp);
+
+            if (func_args_list)
+                func_args_list->pre_ = func_name;
+            func_name->next_ = func_args_list;
+            func_name->pre_ = type;
+            type->next_ = func_name;
+
+            node->children_.emplace_front(func_args_list);
+            node->children_.emplace_front(func_name);
+            node->children_.emplace_front(type);
         }
             break;
         case 66: /* 66. <函数类型> -> <数据类型> */
@@ -1537,6 +1604,7 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
             ASTNode * type = tree_node.top();   // 数据类型
             tree_node.pop();
 
+            func_args->pre_ = type;
             type->next_ = func_args;
 
             node = type;
@@ -1544,16 +1612,20 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
             break;
         case 72: /* 72. <表达式> -> <赋值表达式> */
         {
+            node->ast_name_ = "表达式";
+
             tmp = tree_node.top();
             tree_node.pop();
-            node = tmp;
+            node->children_.emplace_front(tmp);
         }
             break;
         case 73: /* 73. <表达式> -> <简单表达式> */
         {
+            node->ast_name_ = "表达式";
+
             tmp = tree_node.top();
             tree_node.pop();
-            node = tmp;
+            node->children_.emplace_front(tmp);
         }
             break;
         case 74: /* 74. <简单表达式> -> <布尔表达式> */
@@ -1566,27 +1638,37 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
         case 75: /* 75. <赋值表达式> -> <变量> = <布尔表达式> */
         {
             node->ast_name_ = "=";
+            node->type_ = "AOP";
 
-            tmp = tree_node.top();
+            ASTNode * bool_exp = tree_node.top();
             tree_node.pop();
-            node->children_.emplace_front(tmp);
 
-            tmp = tree_node.top();
+            ASTNode * var = tree_node.top();
             tree_node.pop();
-            node->children_.emplace_front(tmp);
+
+            bool_exp->pre_ = var;
+            var->next_ = bool_exp;
+
+            node->children_.emplace_front(bool_exp);
+            node->children_.emplace_front(var);
         }
             break;
         case 76: /* 76. <布尔表达式> -> <布尔表达式> || <布尔项> */
         {
             node->ast_name_ = "||";
+            node->type_ = "BOP";
 
-            tmp = tree_node.top();
+            ASTNode * bool_term = tree_node.top();
             tree_node.pop();
-            node->children_.emplace_front(tmp);
 
-            tmp = tree_node.top();
+            ASTNode * bool_exp = tree_node.top();
             tree_node.pop();
-            node->children_.emplace_front(tmp);
+
+            bool_term->pre_ = bool_exp;
+            bool_exp->next_ = bool_term;
+
+            node->children_.emplace_front(bool_term);
+            node->children_.emplace_front(bool_exp);
         }
             break;
         case 77: /* 77. <布尔表达式> -> <布尔项> */
@@ -1599,14 +1681,19 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
         case 78: /* 78. <布尔项> -> <布尔项> && <布尔因子> */
         {
             node->ast_name_ = "&&";
+            node->type_ = "BOP";
 
-            tmp = tree_node.top();
+            ASTNode * bool_factor = tree_node.top();
             tree_node.pop();
-            node->children_.emplace_front(tmp);
 
-            tmp = tree_node.top();
+            ASTNode * bool_term = tree_node.top();
             tree_node.pop();
-            node->children_.emplace_front(tmp);
+
+            bool_factor->pre_ = bool_term;
+            bool_term->next_ = bool_factor;
+
+            node->children_.emplace_front(bool_factor);
+            node->children_.emplace_front(bool_term);
         }
             break;
         case 79: /* 79. <布尔项> -> <布尔因子> */
@@ -1619,10 +1706,11 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
         case 80: /* 80. <布尔因子> -> ! <布尔因子> */
         {
             node->ast_name_ = "!";
+            node->type_ = "BOP";
 
-            tmp = tree_node.top();
+            ASTNode * bool_factor = tree_node.top();
             tree_node.pop();
-            node->children_.emplace_front(tmp);
+            node->children_.emplace_front(bool_factor);
         }
             break;
         case 81: /* 81. <布尔因子> -> <关系表达式> */
@@ -1641,73 +1729,91 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
             break;
         case 83: /* 83. <关系表达式> -> <算术表达式> <关系运算符> <算术表达式> */
         {
-            tmp = tree_node.top();
+            ASTNode * arith_exp1 = tree_node.top();
             tree_node.pop();
-            node->children_.emplace_front(tmp);
 
-            tmp = tree_node.top();
+            ASTNode * rel_op = tree_node.top();
             tree_node.pop();
-            node->ast_name_ = tmp->ast_name_;
 
-            tmp = tree_node.top();
+            ASTNode * arith_exp2 = tree_node.top();
             tree_node.pop();
-            node->children_.emplace_front(tmp);
+
+            arith_exp2->pre_ = arith_exp1;
+            arith_exp1->next_ = arith_exp2;
+            rel_op->children_.emplace_front(arith_exp2);
+            rel_op->children_.emplace_front(arith_exp1);
+
+            node = rel_op;
         }
             break;
         case 84: /* 84. <关系运算符> -> > */
         {
             node->ast_name_ = ">";
+            node->type_ = "COP";
         }
             break;
         case 85: /* 85. <关系运算符> -> < */
         {
             node->ast_name_ = "<";
+            node->type_ = "COP";
         }
             break;
         case 86: /* 86. <关系运算符> -> >= */
         {
             node->ast_name_ = ">=";
+            node->type_ = "COP";
         }
             break;
         case 87: /* 87. <关系运算符> -> <= */
         {
             node->ast_name_ = "<=";
+            node->type_ = "COP";
         }
             break;
         case 88: /* 88. <关系运算符> -> == */
         {
             node->ast_name_ = "==";
+            node->type_ = "COP";
         }
             break;
         case 89: /* 89. <关系运算符> -> != */
         {
             node->ast_name_ = "!=";
+            node->type_ = "COP";
         }
             break;
         case 90: /* 90. <算术表达式> -> <项> + <算术表达式> */
         {
             node->ast_name_ = "+";
+            node->type_ = "OOP";
 
-            tmp = tree_node.top();
+            ASTNode * term = tree_node.top();
             tree_node.pop();
-            node->children_.emplace_front(tmp);
+            node->children_.emplace_front(term);
 
-            tmp = tree_node.top();
+            ASTNode * factor = tree_node.top();
             tree_node.pop();
-            node->children_.emplace_front(tmp);
+            node->children_.emplace_front(factor);
+
+            term->pre_ = factor;
+            factor->next_ = term;
         }
             break;
         case 91: /* 91. <算术表达式> -> <项> - <算术表达式> */
         {
             node->ast_name_ = "-";
+            node->type_ = "OOP";
 
-            tmp = tree_node.top();
+            ASTNode * term = tree_node.top();
             tree_node.pop();
-            node->children_.emplace_front(tmp);
+            node->children_.emplace_front(term);
 
-            tmp = tree_node.top();
+            ASTNode * factor = tree_node.top();
             tree_node.pop();
-            node->children_.emplace_front(tmp);
+            node->children_.emplace_front(factor);
+
+            term->pre_ = factor;
+            factor->next_ = term;
         }
             break;
         case 92: /* 92. <算术表达式> -> <项> */
@@ -1720,120 +1826,146 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
         case 93: /* 93. <项> -> <因子> * <项> */
         {
             node->ast_name_ = "*";
+            node->type_ = "OOP";
 
-            tmp = tree_node.top();
+            ASTNode * term = tree_node.top();
             tree_node.pop();
-            node->children_.emplace_front(tmp);
+            node->children_.emplace_front(term);
 
-            tmp = tree_node.top();
+            ASTNode * factor = tree_node.top();
             tree_node.pop();
-            node->children_.emplace_front(tmp);
+            node->children_.emplace_front(factor);
+
+            term->pre_ = factor;
+            factor->next_ = term;
         }
             break;
         case 94: /* 94. <项> -> <因子> / <项> */
         {
             node->ast_name_ = "/";
+            node->type_ = "OOP";
 
-            tmp = tree_node.top();
+            ASTNode * term = tree_node.top();
             tree_node.pop();
-            node->children_.emplace_front(tmp);
+            node->children_.emplace_front(term);
 
-            tmp = tree_node.top();
+            ASTNode * factor = tree_node.top();
             tree_node.pop();
-            node->children_.emplace_front(tmp);
+            node->children_.emplace_front(factor);
+
+            term->pre_ = factor;
+            factor->next_ = term;
         }
             break;
         case 95: /* 95. <项> -> <因子> % <项> */
         {
             node->ast_name_ = "%";
+            node->type_ = "OOP";
 
-            tmp = tree_node.top();
+            ASTNode * term = tree_node.top();
             tree_node.pop();
-            node->children_.emplace_front(tmp);
+            node->children_.emplace_front(term);
 
-            tmp = tree_node.top();
+            ASTNode * factor = tree_node.top();
             tree_node.pop();
-            node->children_.emplace_front(tmp);
+            node->children_.emplace_front(factor);
+
+            term->pre_ = factor;
+            factor->next_ = term;
         }
             break;
         case 96: /* 96. <项> -> <因子> */
         {
-            tmp = tree_node.top();
+            ASTNode * factor = tree_node.top();
             tree_node.pop();
-            node = tmp;
+            node = factor;
         }
             break;
         case 97: /* 97. <因子> -> ( <算术表达式> ) */
         {
-            tmp = tree_node.top();
+            ASTNode * arith_exp = tree_node.top();
             tree_node.pop();
-            node = tmp;
+            node = arith_exp;
         }
             break;
         case 98: /* 98. <因子> -> <常数> */
         {
-            tmp = tree_node.top();
+            ASTNode * const_num = tree_node.top();
             tree_node.pop();
-            node = tmp;
+            node = const_num;
         }
             break;
         case 99: /* 99. <因子> -> <字符常量> */
         {
-            tmp = tree_node.top();
+            ASTNode * cconst = tree_node.top();
             tree_node.pop();
-            node = tmp;
+            node = cconst;
         }
             break;
         case 100: /* 100. <因子> -> <字符串常量> */
         {
-            tmp = tree_node.top();
+            ASTNode * sconst = tree_node.top();
             tree_node.pop();
-            node = tmp;
+            node = sconst;
         }
             break;
         case 101: /* 101. <因子> -> <变量> */
         {
-            tmp = tree_node.top();
+            ASTNode * var = tree_node.top();
             tree_node.pop();
-            node = tmp;
+            node = var;
         }
             break;
         case 102: /* 102. <因子> -> <函数调用> */
         {
-            tmp = tree_node.top();
+            ASTNode * func_call = tree_node.top();
             tree_node.pop();
-            node = tmp;
+
+            node = func_call;
         }
             break;
         case 103: /* 103. <函数调用>  -> <函数名> ( <实参列表> ) */
         {
             node->ast_name_ = "函数调用";
 
-            tmp = tree_node.top();
+            ASTNode * actual_args = tree_node.top();
             tree_node.pop();
-            node->children_.emplace_front(tmp);
 
-            tmp = tree_node.top();
+            while (actual_args)
+            {
+                node->children_.emplace_back(actual_args);
+                actual_args = actual_args->next_;
+            }
+
+            ASTNode * func_name = tree_node.top();
             tree_node.pop();
-            node->children_.emplace_front(tmp);
+
+            if (actual_args)
+                actual_args->pre_ = func_name;
+            func_name->next_ = actual_args;
+            node->children_.emplace_front(func_name);
         }
             break;
         case 104: /* 104. <实参列表> -> <表达式> */
         {
-            tmp = tree_node.top();
+            ASTNode * exp = tree_node.top();
             tree_node.pop();
-            node = tmp;
+
+            node = exp;
         }
             break;
         case 105: /* 105. <实参列表> -> <表达式> , <实参列表> */
         {
-            tmp = tree_node.top();
+            ASTNode * actual_args = tree_node.top();
             tree_node.pop();
-            node->children_.emplace_front(tmp);
 
-            tmp = tree_node.top();
+            ASTNode * exp = tree_node.top();
             tree_node.pop();
-            node->children_.emplace_front(tmp);
+
+            actual_args->pre_ = exp;
+            exp->next_ = actual_args;
+
+            node = exp;
         }
             break;
         case 106: /* 106. <实参列表> -> <epsilon> */
@@ -1846,6 +1978,11 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
     }
 
     return node;
+}
+
+ASTTree *LR1Parser::GetAST()
+{
+    return tree;
 }
 
 LR1Parser::~LR1Parser()
