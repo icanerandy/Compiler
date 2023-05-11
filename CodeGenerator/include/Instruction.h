@@ -25,7 +25,15 @@ public:
     static Instruction ISUB;
     static Instruction IMUL;
     static Instruction IDIV;
+    static Instruction IREM;
+    static Instruction IAND;
+    static Instruction IOR;
+    static Instruction IF_EQ;
+    static Instruction IF_ICMPEQ;
+    static Instruction IF_ICMPNE;
+    static Instruction IF_ICMPLT;
     static Instruction IF_ICMPGE;
+    static Instruction IF_ICMPGT;
     static Instruction IF_ICMPLE;
     static Instruction GOTO;
     static Instruction INVOKEVIRTUAL;

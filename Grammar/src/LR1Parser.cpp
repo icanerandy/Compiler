@@ -2571,7 +2571,7 @@ void LR1Parser::GenerateAsm(ASTNode * node)
         else if (tmp->type_ == "<常数>")
         {
             ProgramGenerator::Emit(Instruction::SIPUSH, std::to_string(tmp->i_value_));
-            EmitReturnInstruction(tmp->GetSymbol());
+            ProgramGenerator::Emit(Instruction::IRETURN);
         }
         else if (tmp->type_ == "函数调用")
         {
@@ -2754,6 +2754,37 @@ void LR1Parser::GenerateAsm(ASTNode * node)
             // 如果其lhs和rhs的type_是其它，说明其运算结果已经放入堆栈，无需取出压入
             ProgramGenerator::Emit(Instruction::IDIV);
         }
+        if (node->content_ == "%")
+        {
+            if (lhs->type_ == "<变量>")
+            {
+                int idx = GetLocalVariableIndex(lhs->GetSymbol());
+                if (idx != -1)
+                    ProgramGenerator::Emit(Instruction::ILOAD, std::to_string(idx));
+                else    // 全局变量
+                    ProgramGenerator::Emit(Instruction::GETSTATIC, ProgramGenerator::program_name  + "/" + lhs->content_ + " I");
+            }
+            else if (lhs->type_ == "<常数>")
+            {
+                ProgramGenerator::Emit(Instruction::SIPUSH, std::to_string(lhs->i_value_));
+            }
+
+            if (rhs->type_ == "<变量>")
+            {
+                int idx = GetLocalVariableIndex(rhs->GetSymbol());
+                if (idx != -1)
+                    ProgramGenerator::Emit(Instruction::ILOAD, std::to_string(idx));
+                else    // 全局变量
+                    ProgramGenerator::Emit(Instruction::GETSTATIC, ProgramGenerator::program_name  + "/" + rhs->content_ + " I");
+            }
+            else if (rhs->type_ == "<常数>")
+            {
+                ProgramGenerator::Emit(Instruction::SIPUSH, std::to_string(rhs->i_value_));
+            }
+
+            // 如果其lhs和rhs的type_是其它，说明其运算结果已经放入堆栈，无需取出压入
+            ProgramGenerator::Emit(Instruction::IREM);
+        }
     }
 
     if (type == "COP")
@@ -2792,7 +2823,7 @@ void LR1Parser::GenerateAsm(ASTNode * node)
         std::string oper = node->content_;
         if (oper == "==")
         {
-
+            ProgramGenerator::EmitString(Instruction::IF_ICMPNE.ToString() + " " + branch);
         }
         if (oper == "<")
         {
@@ -2800,7 +2831,7 @@ void LR1Parser::GenerateAsm(ASTNode * node)
         }
         if (oper == "<=")
         {
-
+            ProgramGenerator::EmitString(Instruction::IF_ICMPGT.ToString() + " " + branch);
         }
         if (oper == ">")
         {
@@ -2808,11 +2839,11 @@ void LR1Parser::GenerateAsm(ASTNode * node)
         }
         if (oper == ">=")
         {
-
+            ProgramGenerator::EmitString(Instruction::IF_ICMPLT.ToString() + " " + branch);
         }
         if (oper == "!=")
         {
-
+            ProgramGenerator::EmitString(Instruction::IF_ICMPEQ.ToString() + " " + branch);
         }
     }
 
@@ -2820,6 +2851,46 @@ void LR1Parser::GenerateAsm(ASTNode * node)
     {
         ASTNode * lhs = node->GetChildrenList().front();
         ASTNode * rhs = node->GetChildrenList().back();
+
+        if (lhs->type_ == "<变量>")
+        {
+            int idx = GetLocalVariableIndex(lhs->GetSymbol());
+            if (idx != -1)
+                ProgramGenerator::Emit(Instruction::ILOAD, std::to_string(idx));
+            else    // 全局变量
+                ProgramGenerator::Emit(Instruction::GETSTATIC, ProgramGenerator::program_name  + "/" + lhs->content_+ " I");
+        }
+        else if (lhs->type_ == "<常数>")
+        {
+            ProgramGenerator::Emit(Instruction::SIPUSH, std::to_string(lhs->i_value_));
+        }
+
+        if (rhs->type_ == "<变量>")
+        {
+            int idx = GetLocalVariableIndex(rhs->GetSymbol());
+            if (idx != -1)
+                ProgramGenerator::Emit(Instruction::ILOAD, std::to_string(idx));
+            else    // 全局变量
+                ProgramGenerator::Emit(Instruction::GETSTATIC, ProgramGenerator::program_name  + "/" + rhs->content_ + " I");
+        }
+        else if (rhs->type_ == "<常数>")
+        {
+            ProgramGenerator::Emit(Instruction::SIPUSH, std::to_string(rhs->i_value_));
+        }
+
+        std::string branch = ProgramGenerator::GetInstance()->GetBranch() + "\n";
+        // 如果其lhs和rhs的type_是其它，说明其运算结果已经放入堆栈，无需取出压入
+        std::string oper = node->content_;
+        if (oper == "&&")
+        {
+            ProgramGenerator::EmitString(Instruction::IAND.ToString() + "\n");
+            ProgramGenerator::EmitString(Instruction::IF_EQ.ToString() + " " + branch);
+        }
+        if (oper == "||")
+        {
+            ProgramGenerator::EmitString(Instruction::IOR.ToString() + "\n");
+            ProgramGenerator::EmitString(Instruction::IF_EQ.ToString() + " " + branch);
+        }
     }
 
 /*    if (type == "<变量>")
@@ -2877,10 +2948,15 @@ int LR1Parser::GetLocalVariableIndex(Symbol *symbol)
  */
 void LR1Parser::GetVariblesByFuncBody(ASTNode * node)
 {
+    if (node == nullptr)
+        return;
+
     for (auto child : node->GetChildrenList())
     {
         GetVariblesByFuncBody(child);
 
+        if (child == nullptr)
+            continue;
         if (child->type_ == "变量声明")
         {
             ASTNode * tmp = child->GetChildrenList().front();

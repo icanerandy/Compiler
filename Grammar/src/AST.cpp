@@ -371,7 +371,7 @@ ASTNode * ASTTree::ExecuteNode(ASTNode * root)
         auto child = root->GetChildrenList().front();
         CpyChildToParent(root, child);
 
-        if (child->type_ == "函数调用" /* 同时需要函数调用有返回值 */ && GetType(child->GetChildrenList().front()) != "void" && child->GetChildrenList().front()->content_ != "printf")
+        if (child->type_ == "函数调用" /* 同时需要函数调用有返回值 */ && child->GetChildrenList().front()->content_ != "printf" && GetType(child) != "void" )
         {
             root->i_value_ = func_ret_val.front();
             func_ret_val.pop_front();
