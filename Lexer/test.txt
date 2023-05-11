@@ -1,29 +1,21 @@
-// break，continue跳转
-
-int a;
-const int const_num = 10;
-
-int func1(char, int);
-
+//双递归函数调用测试2：求菲波拉契数列
+//结果：1  1  2  3  5  8  13   21   34...
+int seq(int m);
 main()
 {
-    char  a, b = 'y', c, d = 'x';
-    int num = sum();
-    if (x == "hello world")
-        printf("hahahahahaha");
-
-    x = 10;
-    int y = 20;
-    while (n < 10)
-    {
-        char v = 'a';
-        n = n + 1;
-    }
+   int n;
+   n=5;
+   printf("%d", seq(1));
+   printf("The value is %d", seq(n));
 }
 
-char return_ch(String str)
+int seq(int m)
 {
-    const int a = 10;
-    char ch = 'a';
-    return ch;
+      int s,a,b;
+      if(m<3)
+          s=1;
+      else{
+     s=seq(m-1)+seq(m-2);//这种写法运行结果可能不正确，中间代码翻译没有问题，需再进一步测试目标代码翻译
+      }
+      return s;
 }

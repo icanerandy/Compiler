@@ -25,6 +25,9 @@
 
 #include "include/Lexer.h"
 #include "include/AST.h"
+#include "include/TypeSystem.h"
+#include "include/ProgramGenerator.h"
+#include "include/CLibCall.h"
 
 class LR1Parser
 {
@@ -78,6 +81,35 @@ private:
         std::map<size_t, std::vector< std::pair<std::string, size_t> >> g;   // 保存DFA的图，first是经过什么转移，second是转移到的状态编号
     };
 
+private:
+    ASTTree* tree;
+
+private:
+    std::vector<Token> tokens_;
+    Grammar grammar_;
+    CanonicalCollection canonicalCollection_;
+    std::queue< std::pair<LR1Items, size_t> > Q;    // DFA队列，用于存储待转移的有效项目集
+    // map<现在的状态, map<接收符号, pair<(移进，归约，接收), 转移状态>>>
+    std::map<size_t, std::map<std::string, std::pair<std::string, size_t>>> action_;
+    std::map<size_t, std::map<std::string, size_t>> goto_;
+
+private:
+    std::map<std::string, std::set<std::string>> first_set_;
+    std::map<std::string, std::set<std::string>> follow_set_;
+
+private:
+    std::ifstream grammar_in_;
+    std::ofstream out_;
+
+private:
+    TypeSystem type_system_;
+    std::string symbol_scope_;
+    void * attribute_node_;
+    std::stack<ASTNode *> tree_node_;
+    std::stack<void*> attribution_stack_;
+    int nesting_level_{};
+    std::list<Symbol *> local_vars_;
+
 public:
     explicit LR1Parser(const std::vector<Token>& tokens, const std::string& grammar_in, const std::string& lr_parse_result);
     ~LR1Parser();
@@ -102,27 +134,19 @@ private:
 
 private:
     ASTNode * MkLeaf(const Token& token);
-    ASTNode * MkNode(size_t idx, std::stack<ASTNode *>& tree_node);
+    ASTNode * MkNode(size_t idx);
+    void SetAttribute(ASTNode* node);
+    void AddScope(ASTNode * node, const std::string& func_name);
+
+public:
+    void GenerateAsm(ASTNode * node);
 
 private:
-    ASTTree* tree;
-
-private:
-    std::vector<Token> tokens_;
-    Grammar grammar_;
-    CanonicalCollection canonicalCollection_;
-    std::queue< std::pair<LR1Items, size_t> > Q;    // DFA队列，用于存储待转移的有效项目集
-    // map<现在的状态, map<接收符号, pair<(移进，归约，接收), 转移状态>>>
-    std::map<size_t, std::map<std::string, std::pair<std::string, size_t>>> action_;
-    std::map<size_t, std::map<std::string, size_t>> goto_;
-
-private:
-    std::map<std::string, std::set<std::string>> first_set_;
-    std::map<std::string, std::set<std::string>> follow_set_;
-
-private:
-    std::ifstream grammar_in_;
-    std::ofstream out_;
+    int GetLocalVariableIndex(Symbol * symbol);
+    void CpySymbolToParent(ASTNode * child, ASTNode * parent);
+    void GetVariblesByFuncBody(ASTNode * node);
+    std::string EmitArgs(Symbol * func);
+    void EmitReturnInstruction(Symbol * sym);
 
 };
 

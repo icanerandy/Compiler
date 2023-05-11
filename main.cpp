@@ -1,6 +1,5 @@
 #include <iostream>
 #include <sstream>
-#include "include/Semantic.h"
 #include "include/LR1Parser.h"
 #include "include/FA.h"
 #include "include/Lexer.h"
@@ -69,9 +68,9 @@ int main() {
     LR1Parser lr1Parser(tokens,R"(..\Grammar\GrammarRules\testGrammar.txt)", R"(..\Grammar\lr1_parse_result.txt)");
 
     ASTTree * tree = lr1Parser.GetAST();
-    Semantic semantic(tree);
 
-    getchar();
+    std::cout << std::endl;
+    system("pause");
     return 0;
 }
 

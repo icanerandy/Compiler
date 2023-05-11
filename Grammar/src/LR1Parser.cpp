@@ -11,7 +11,8 @@
 #include "include/LR1Parser.h"
 
 LR1Parser::LR1Parser(const std::vector<Token>& tokens, const std::string& grammar_in, const std::string& lr_parse_result)
-    : tokens_(tokens)
+    : tokens_(tokens),
+    symbol_scope_("global")
 {
     grammar_in_.open(grammar_in, std::ios::in);
     if (!grammar_in_.is_open())
@@ -51,6 +52,17 @@ LR1Parser::LR1Parser(const std::vector<Token>& tokens, const std::string& gramma
     // 打印抽象树
     tree->RemoveEmptyNodes();
     tree->PrettyPrint();
+
+    tree->AddTypeSystem(&type_system_);
+    // 执行解释器
+    Symbol * main_entry = type_system_.GetSymbolByText("main");
+    if (main_entry == nullptr)
+    {
+        // TODO: 未声明main函数
+    }
+    else {
+        tree->ExecuteTree(main_entry);
+    }
  }
 
 void LR1Parser::InitGrammar()
@@ -442,7 +454,6 @@ void LR1Parser::Parse()
     /* 初始化 */
     std::stack<size_t> state_stack; // 状态栈
     std::stack<std::string> symbol_stack; // 符号栈
-    std::stack<ASTNode *> tree_node;    // 存放语法树节点
     state_stack.emplace(0);
     symbol_stack.emplace("#");
 
@@ -472,10 +483,21 @@ void LR1Parser::Parse()
 
         if (action_.at(cur_state).at(symbol).first == "Shift")
         {
+            out_ << "Shift for Input: " << symbol << "\n";
+
+            if (symbol == "(" || symbol == "{")
+                nesting_level_++;
+            if (symbol == ")" || symbol == "}")
+                nesting_level_--;
+            if (symbol == "MAIN_ID")
+                symbol_scope_ = "main";
+
             state_stack.emplace(action_.at(cur_state).at(symbol).second);
             symbol_stack.emplace(symbol);
-            if (tokens_.at(ip).type == "<函数名>" || tokens_.at(ip).type == "<常量>" || tokens_.at(ip).type == "<变量>" || tokens_.at(ip).type == "<常数>" || tokens_.at(ip).type == "<字符常量>" || tokens_.at(ip).type == "<字符串常量>")
-                tree_node.emplace(MkLeaf(tokens_.at(ip)));
+
+            if (tokens_.at(ip).type == "<函数名>" || tokens_.at(ip).type == "<常量>" || tokens_.at(ip).type == "<变量>"
+                || tokens_.at(ip).type == "<常数>" || tokens_.at(ip).type == "<字符常量>" || tokens_.at(ip).type == "<字符串常量>")
+                tree_node_.emplace(MkLeaf(tokens_.at(ip)));
             ++ip;
         }
         else if (action_.at(cur_state).at(symbol).first == "Reduce")
@@ -483,10 +505,10 @@ void LR1Parser::Parse()
             size_t idx = action_.at(cur_state).at(symbol).second;
             Production& prod = grammar_.prods.at(idx);
 
-            out_ << "选择了产生式" << prod.left << " -> ";
+            out_ << "reduced by product:\n" << prod.left << " -> ";
             for (const auto& right : prod.right)
                 out_ << right << " ";
-            out_ << "进行归约\n";
+            out_ << "look ahead {" << symbol << "}\n";
 
             size_t size;
             if (prod.right.at(0) == "<epsilon>")
@@ -498,15 +520,14 @@ void LR1Parser::Parse()
                 size = prod.right.size();
             }
 
-            std::vector<std::string> s;  // 记录规约了哪些符号
+            ASTNode* node = MkNode(idx);
+            tree_node_.emplace(node);
+
             for (; size >= 1; size--)
             {
                 state_stack.pop();
-                s.emplace_back(symbol_stack.top());
                 symbol_stack.pop();
             }
-            ASTNode* node = MkNode(idx, tree_node);
-            tree_node.emplace(node);
 
             symbol_stack.emplace(prod.left);
             cur_state = state_stack.top();
@@ -528,7 +549,7 @@ void LR1Parser::Parse()
         {
             out_ << "语法分析成功！\n";
             std::cout << "语法分析成功！" << std::endl;
-            auto * root = new ASTTree(tree_node.top());
+            auto * root = new ASTTree(tree_node_.top());
             tree = root;
             break;
         }
@@ -836,17 +857,21 @@ size_t LR1Parser::IsInCanonicalCollection(LR1Items &lr1Items)
 ASTNode *LR1Parser::MkLeaf(const Token& token)
 {
     auto * node = new ASTNode();
-    node->ast_name_ = token.content;
 
     node->type_ = token.type;
     node->content_ = token.content;
     node->line_no_ = token.line;
     node->column_no_ = token.column;
 
+    // TODO: 变量同作用域？
+    if (token.type == "MAIN_ID" || token.type == "<函数名>")
+        if (nesting_level_ == 0)   // 函数为全局作用域时修改作用域，在符号表中说明已经声明过了，这次为函数调用或定义
+            symbol_scope_.assign(token.content);
+
     return node;
 }
 
-ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
+ASTNode *LR1Parser::MkNode(size_t idx)
 {
     auto * node = new ASTNode();
 
@@ -859,54 +884,94 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
         // TODO: 空串归约？
         case 0: /* 0. <程序>’ -> <程序> # */
         {
-            tmp = tree_node.top();
-            tree_node.pop();
+            tmp = tree_node_.top();
+            tree_node_.pop();
             node = tmp;
         }
             break;
         case 1: /* 1. <程序> -> <声明语句列表> <MAIN函数定义> <函数定义列表> */
         {
-            node->ast_name_ = "程序";
+            node->type_ = "程序";
 
-            ASTNode * func_def_list = tree_node.top();  // 函数定义列表
-            tree_node.pop();
+            ASTNode * func_def_list = tree_node_.top();  // 函数定义列表
+            tree_node_.pop();
 
-            while (func_def_list)
-            {
-                node->children_.emplace_back(func_def_list);
-                func_def_list = func_def_list->next_;
-            }
+            ASTNode * main_def = tree_node_.top();   // MAIN函数定义
+            tree_node_.pop();
 
-            ASTNode * main_def = tree_node.top();   // MAIN函数定义
-            tree_node.pop();
-            node->children_.emplace_front(main_def);
+            ASTNode * declaration_list = tree_node_.top();   // 声明语句列表
+            tree_node_.pop();
 
-            ASTNode * declaration_list = tree_node.top();   // 声明语句列表
-            tree_node.pop();
-
+            // 生成目标代码
+            ProgramGenerator::GetInstance()->Generate();
+            ProgramGenerator::EmitBlankLine();
             while (declaration_list)
             {
+                if (declaration_list->type_ == "变量声明")
+                {
+                    auto child = declaration_list->GetChildrenList().front()->GetChildrenList().front();
+                    if (child->type_ == "INIT")
+                        ProgramGenerator::EmitDirective(Directive::FIELD_PRIVATE_STATIC, child->GetChildrenList().front()->content_, "I", "= " +
+                                std::to_string(child->GetChildrenList().back()->i_value_));
+                    else
+                        ProgramGenerator::EmitDirective(Directive::FIELD_PRIVATE_STATIC, child->content_, "I");
+                }
+
                 node->children_.emplace_back(declaration_list);
                 declaration_list = declaration_list->next_;
             }
+
+            node->children_.emplace_back(main_def);
+
+            ProgramGenerator::GetInstance()->GenerateMainMethod();
+            GenerateAsm(main_def->GetChildrenList().front());
+            ProgramGenerator::Emit(Instruction::RETURN);
+            ProgramGenerator::EmitDirective(Directive::END_METHOD);
+
+            ASTNode * cur_func = func_def_list;
+            while (cur_func)
+            {
+                node->children_.emplace_back(cur_func);
+
+                auto func = cur_func->GetChildrenList().front()->next_;
+                Symbol * func_sym = func->GetSymbol();
+
+                std::string declaration = func_sym->name_ + EmitArgs(func_sym);
+                ProgramGenerator::EmitDirective(Directive::METHOD_PUBLIC_STATIC, declaration);
+                GenerateAsm(cur_func);
+                ProgramGenerator::EmitDirective(Directive::END_METHOD);
+
+                cur_func = cur_func->next_;
+            }
+
+            ProgramGenerator::GetInstance()->finish();
         }
             break;
         case 2: /* 2. <MAIN函数定义> -> MAIN_ID ( ) <复合语句> */
         {
-            node->ast_name_ = "MAIN函数定义";
+            node->type_ = "MAIN_ID";
 
-            tmp = tree_node.top();
-            tree_node.pop();
-            node->children_.emplace_front(tmp);
+            ASTNode * compound_stmt = tree_node_.top();
+            tree_node_.pop();
+            node->children_.emplace_front(compound_stmt);
+
+            Symbol * main_entry = type_system_.NewSymbol("main", symbol_scope_);
+            main_entry->body_ = compound_stmt;
+            type_system_.AddDeclarator(main_entry, Declarator::FUNCTION);
+            symbol_scope_ = "main";
+            type_system_.AddSymbolsToTable(main_entry, symbol_scope_);
+
+            AddScope(compound_stmt, "main");
+            symbol_scope_ = "global";
         }
             break;
         case 3: /* 3. <声明语句列表> -> <声明语句> <声明语句列表> */
         {
-            ASTNode * declaration_list = tree_node.top();   // 声明语句列表
-            tree_node.pop();
+            ASTNode * declaration_list = tree_node_.top();   // 声明语句列表
+            tree_node_.pop();
 
-            ASTNode * declaration  = tree_node.top();   // 声明语句
-            tree_node.pop();
+            ASTNode * declaration  = tree_node_.top();   // 声明语句
+            tree_node_.pop();
 
             if (declaration_list)
                 declaration_list->pre_ = declaration;
@@ -922,11 +987,11 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
             break;
         case 5: /* 5. <函数定义列表> -> <函数定义> <函数定义列表> */
         {
-            ASTNode * func_def_list = tree_node.top();  // 函数定义列表
-            tree_node.pop();
+            ASTNode * func_def_list = tree_node_.top();  // 函数定义列表
+            tree_node_.pop();
 
-            ASTNode * func_def = tree_node.top();   // 函数定义
-            tree_node.pop();
+            ASTNode * func_def = tree_node_.top();   // 函数定义
+            tree_node_.pop();
 
             if (func_def_list)
                 func_def_list->pre_ = func_def;
@@ -942,19 +1007,21 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
             break;
         case 7: /* 7. <函数定义> -> <函数类型> <函数名> ( <函数定义形参列表> ) <复合语句> */
         {
-            node->ast_name_ = "函数定义";
+            node->type_ = "函数定义";
 
-            ASTNode * compound_stmt = tree_node.top();
-            tree_node.pop();
+            ASTNode * compound_stmt = tree_node_.top();
+            tree_node_.pop();
 
-            ASTNode * func_def_args_list = tree_node.top();
-            tree_node.pop();
+            ASTNode * func_def_args_list = tree_node_.top();
+            tree_node_.pop();
+            SetAttribute(func_def_args_list);
 
-            ASTNode * func_name = tree_node.top();
-            tree_node.pop();
+            ASTNode * func_name = tree_node_.top();
+            tree_node_.pop();
+            func_name->symbol_ = type_system_.GetSymbolByText(func_name->content_);
 
-            ASTNode * type = tree_node.top();
-            tree_node.pop();
+            ASTNode * type = tree_node_.top();
+            tree_node_.pop();
 
             compound_stmt->pre_ = func_def_args_list;
             if (func_def_args_list)
@@ -975,14 +1042,50 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
             node->children_.emplace_front(func_def_args_list);
             node->children_.emplace_front(func_name);
             node->children_.emplace_front(type);
+
+            // 上面的复合语句节点要添加到符号表中对应函数中
+            Symbol * symbol = type_system_.GetSymbolByText(func_name->content_);
+            if (symbol == nullptr)
+            {
+                // 未声明过的函数
+                Symbol * att_list;
+                if (func_def_args_list)
+                {
+                    att_list = (Symbol *)attribution_stack_.top();
+                    attribution_stack_.pop();
+                }
+                auto * att_name = type_system_.NewSymbol(func_name->content_, symbol_scope_);
+                auto * att_type = (TypeLink *)attribution_stack_.top();
+                attribution_stack_.pop();
+
+                type_system_.AddSpecifierToDeclaration(att_type, att_name);
+                type_system_.AddDeclarator(att_name, Declarator::FUNCTION);
+                if (func_def_args_list)
+                {
+                    att_name->args_ = att_list;
+                }
+                else
+                    att_list = nullptr;
+
+                type_system_.AddSymbolsToTable(att_name, symbol_scope_);
+                symbol = type_system_.GetSymbolByText(func_name->content_);
+            }
+            else
+            {
+                attribution_stack_.pop();
+            }
+
+            symbol->SetFuncBody(compound_stmt);
+
+            symbol_scope_ = "global";
         }
             break;
         case 8: /* 8. <函数定义形参列表> -> <函数定义形参> */
         {
-            node->ast_name_ = "函数定义形参列表";
+            node->type_ = "函数定义形参列表";
 
-            tmp = tree_node.top();
-            tree_node.pop();
+            tmp = tree_node_.top();
+            tree_node_.pop();
 
             while (tmp)
             {
@@ -998,27 +1101,36 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
             break;
         case 10: /* 10. <函数定义形参> -> <数据类型> <变量> */
         {
-            ASTNode * var = tree_node.top();    // 变量
-            tree_node.pop();
+            ASTNode * var = tree_node_.top();    // 变量
+            tree_node_.pop();
 
-            ASTNode * type = tree_node.top();   // 数据类型
-            tree_node.pop();
+            ASTNode * type = tree_node_.top();   // 数据类型
+            tree_node_.pop();
 
             type->children_.emplace_front(var);
 
             node = type;
+
+            auto * specifier = (TypeLink *)attribution_stack_.top();
+            attribution_stack_.pop();
+
+            auto * symbol = type_system_.NewSymbol(var->content_, symbol_scope_);
+            symbol->level_ = nesting_level_;
+            type_system_.AddSpecifierToDeclaration(specifier, symbol);
+
+            attribution_stack_.emplace(symbol);
         }
             break;
         case 11: /* 11. <函数定义形参> -> <数据类型> <变量> , <函数定义形参> */
         {
-            ASTNode * func_args = tree_node.top();  // 函数定义形参
-            tree_node.pop();
+            ASTNode * func_args = tree_node_.top();  // 函数定义形参
+            tree_node_.pop();
 
-            ASTNode * var = tree_node.top();    // 变量
-            tree_node.pop();
+            ASTNode * var = tree_node_.top();    // 变量
+            tree_node_.pop();
 
-            ASTNode * type = tree_node.top();   // 数据类型
-            tree_node.pop();
+            ASTNode * type = tree_node_.top();   // 数据类型
+            tree_node_.pop();
 
             type->children_.emplace_front(var);
 
@@ -1027,14 +1139,26 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
             type->next_ = func_args;
 
             node = type;
+
+            auto * args = (Symbol *)attribution_stack_.top();
+            attribution_stack_.pop();
+
+            auto * symbol = type_system_.NewSymbol(var->content_, symbol_scope_);
+            symbol->level_ = nesting_level_;
+            auto * specifier = (TypeLink *)attribution_stack_.top();
+            attribution_stack_.pop();
+            type_system_.AddSpecifierToDeclaration(specifier, symbol);
+
+            symbol->SetNextSymbol(args);
+            attribution_stack_.emplace(symbol);
         }
             break;
         case 12: /* 12. <复合语句> -> { <语句表> } */
         {
-            node->ast_name_ = "复合语句";
+            node->type_ = "复合语句";
 
-            ASTNode * stmt_table = tree_node.top();
-            tree_node.pop();
+            ASTNode * stmt_table = tree_node_.top();
+            tree_node_.pop();
 
             while (stmt_table)
             {
@@ -1045,18 +1169,18 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
             break;
         case 13: /* 13. <语句表> -> <语句> */
         {
-            tmp = tree_node.top();
-            tree_node.pop();
+            tmp = tree_node_.top();
+            tree_node_.pop();
             node = tmp;
         }
             break;
         case 14: /* 14. <语句表> -> <语句> <语句表> */
         {
-            ASTNode * stmt_table = tree_node.top();
-            tree_node.pop();
+            ASTNode * stmt_table = tree_node_.top();
+            tree_node_.pop();
 
-            ASTNode * stmt = tree_node.top();
-            tree_node.pop();
+            ASTNode * stmt = tree_node_.top();
+            tree_node_.pop();
 
             stmt_table->pre_ = stmt;
             stmt->next_ = stmt_table;
@@ -1066,72 +1190,72 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
             break;
         case 15: /* 15. <执行语句> -> <数据处理语句>  */
         {
-            tmp = tree_node.top();
-            tree_node.pop();
+            tmp = tree_node_.top();
+            tree_node_.pop();
             node = tmp;
         }
             break;
         case 16: /* 16. <执行语句> -> <控制语句> */
         {
-            tmp = tree_node.top();
-            tree_node.pop();
+            tmp = tree_node_.top();
+            tree_node_.pop();
             node = tmp;
         }
             break;
         case 17: /* 17. <数据处理语句> -> <表达式> ; */
         {
-            tmp = tree_node.top();
-            tree_node.pop();
+            tmp = tree_node_.top();
+            tree_node_.pop();
             node = tmp;
         }
             break;
         case 18: /* 18. <控制语句> -> <if语句> */
         {
-            tmp = tree_node.top();
-            tree_node.pop();
+            tmp = tree_node_.top();
+            tree_node_.pop();
             node = tmp;
         }
             break;
         case 19: /* 19. <控制语句> -> <for语句> */
         {
-            tmp = tree_node.top();
-            tree_node.pop();
+            tmp = tree_node_.top();
+            tree_node_.pop();
             node = tmp;
         }
             break;
         case 20: /* 20. <控制语句> -> <while语句> */
         {
-            tmp = tree_node.top();
-            tree_node.pop();
+            tmp = tree_node_.top();
+            tree_node_.pop();
             node = tmp;
         }
             break;
         case 21: /* 21. <控制语句> -> <do-while语句> */
         {
-            tmp = tree_node.top();
-            tree_node.pop();
+            tmp = tree_node_.top();
+            tree_node_.pop();
             node = tmp;
         }
             break;
         case 22: /* 22. <控制语句> -> <return语句> */
         {
-            tmp = tree_node.top();
-            tree_node.pop();
+            tmp = tree_node_.top();
+            tree_node_.pop();
             node = tmp;
         }
             break;
         case 23: /* 23. <if语句> -> if ( <表达式> ) <循环语句> <if-tail> */
         {
-            node->ast_name_ = "if语句";
+            node->type_ = "if语句";
 
-            ASTNode * tail = tree_node.top();
-            tree_node.pop();
+            ASTNode * tail = tree_node_.top();
+            tree_node_.pop();
 
-            ASTNode * stmt = tree_node.top();
-            tree_node.pop();
+            ASTNode * stmt = tree_node_.top();
+            tree_node_.pop();
 
-            ASTNode * exp = tree_node.top();
-            tree_node.pop();
+            ASTNode * exp = tree_node_.top();
+            tree_node_.pop();
 
             if (tail)
                 tail->pre_ = stmt;
@@ -1146,8 +1270,8 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
             break;
         case 24: /* 24. <if-tail> -> else <循环语句> */
         {
-            tmp = tree_node.top();
-            tree_node.pop();
+            tmp = tree_node_.top();
+            tree_node_.pop();
             node = tmp;
         }
             break;
@@ -1158,19 +1282,19 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
             break;
         case 26: /* 26. <for语句> -> for ( <表达式> ; <表达式> ; <表达式> ) <循环语句> */
         {
-            node->ast_name_ = "for语句";
+            node->type_ = "for语句";
 
-            ASTNode * stmt = tree_node.top();
-            tree_node.pop();
+            ASTNode * stmt = tree_node_.top();
+            tree_node_.pop();
 
-            ASTNode * exp1 = tree_node.top();
-            tree_node.pop();
+            ASTNode * exp1 = tree_node_.top();
+            tree_node_.pop();
 
-            ASTNode * exp2 = tree_node.top();
-            tree_node.pop();
+            ASTNode * exp2 = tree_node_.top();
+            tree_node_.pop();
 
-            ASTNode * exp3 = tree_node.top();
-            tree_node.pop();
+            ASTNode * exp3 = tree_node_.top();
+            tree_node_.pop();
 
             stmt->pre_ = exp1;
             exp1->pre_ = exp2;
@@ -1187,13 +1311,13 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
             break;
         case 27: /* 27. <while语句> -> while ( <表达式> ) <循环语句> */
         {
-            node->ast_name_ = "while语句";
+            node->type_ = "while语句";
 
-            ASTNode * stmt = tree_node.top();
-            tree_node.pop();
+            ASTNode * stmt = tree_node_.top();
+            tree_node_.pop();
 
-            ASTNode * exp = tree_node.top();
-            tree_node.pop();
+            ASTNode * exp = tree_node_.top();
+            tree_node_.pop();
 
             stmt->pre_ = exp;
             exp->next_ = stmt;
@@ -1203,13 +1327,13 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
             break;
         case 28: /* 28. <do-while语句> -> do <循环用复合语句> while ( <表达式> ) ; */
         {
-            node->ast_name_ = "do-while语句";
+            node->type_ = "do-while语句";
 
-            ASTNode * exp = tree_node.top();
-            tree_node.pop();
+            ASTNode * exp = tree_node_.top();
+            tree_node_.pop();
 
-            ASTNode * compound_stmt = tree_node.top();
-            tree_node.pop();
+            ASTNode * compound_stmt = tree_node_.top();
+            tree_node_.pop();
 
             exp->pre_ = compound_stmt;
             compound_stmt->next_ = exp;
@@ -1219,48 +1343,48 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
             break;
         case 29: /* 29. <循环语句> -> <声明语句> */
         {
-            tmp = tree_node.top();
-            tree_node.pop();
+            tmp = tree_node_.top();
+            tree_node_.pop();
             node = tmp;
         }
             break;
         case 30: /* 30. <循环语句> -> <循环执行语句> */
         {
-            tmp = tree_node.top();
-            tree_node.pop();
+            tmp = tree_node_.top();
+            tree_node_.pop();
             node = tmp;
         }
             break;
         case 31: /* 31. <循环语句> -> <循环用复合语句> */
         {
-            tmp = tree_node.top();
-            tree_node.pop();
+            tmp = tree_node_.top();
+            tree_node_.pop();
             node = tmp;
         }
             break;
         case 32: /* 32. <循环用复合语句> -> { <循环语句表> } */
         {
-            tmp = tree_node.top();
-            tree_node.pop();
+            tmp = tree_node_.top();
+            tree_node_.pop();
             node = tmp;
         }
             break;
         case 33: /* 33. <循环语句表> -> <循环语句> */
         {
-            tmp = tree_node.top();
-            tree_node.pop();
+            tmp = tree_node_.top();
+            tree_node_.pop();
             node = tmp;
         }
             break;
         case 34: /* 34. <循环语句表> -> <循环语句> <循环语句表> */
         {
-            node->ast_name_ = "循环语句表";
+            node->type_ = "循环语句表";
 
-            ASTNode * table = tree_node.top();
-            tree_node.pop();
+            ASTNode * table = tree_node_.top();
+            tree_node_.pop();
 
-            ASTNode * stmt = tree_node.top();
-            tree_node.pop();
+            ASTNode * stmt = tree_node_.top();
+            tree_node_.pop();
 
             table->pre_ = stmt;
             stmt->next_ =  table;
@@ -1270,135 +1394,135 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
             break;
         case 35: /* 35. <循环执行语句> -> <if语句> */
         {
-            tmp = tree_node.top();
-            tree_node.pop();
+            tmp = tree_node_.top();
+            tree_node_.pop();
             node = tmp;
         }
             break;
         case 36: /* 36. <循环执行语句> -> <for语句> */
         {
-            tmp = tree_node.top();
-            tree_node.pop();
+            tmp = tree_node_.top();
+            tree_node_.pop();
             node = tmp;
         }
             break;
         case 37: /* 37. <循环执行语句> -> <while语句> */
         {
-            tmp = tree_node.top();
-            tree_node.pop();
+            tmp = tree_node_.top();
+            tree_node_.pop();
             node = tmp;
         }
             break;
         case 38: /* 38. <循环执行语句> -> <do-while语句> */
         {
-            tmp = tree_node.top();
-            tree_node.pop();
+            tmp = tree_node_.top();
+            tree_node_.pop();
             node = tmp;
         }
             break;
         case 39: /* 39. <循环执行语句> -> <return语句> */
         {
-            tmp = tree_node.top();
-            tree_node.pop();
+            tmp = tree_node_.top();
+            tree_node_.pop();
             node = tmp;
         }
             break;
         case 40: /* 40. <循环执行语句> -> <break语句> */
         {
-            tmp = tree_node.top();
-            tree_node.pop();
+            tmp = tree_node_.top();
+            tree_node_.pop();
             node = tmp;
         }
             break;
         case 41: /* 41. <循环执行语句> -> <continue语句> */
         {
-            tmp = tree_node.top();
-            tree_node.pop();
+            tmp = tree_node_.top();
+            tree_node_.pop();
             node = tmp;
         }
             break;
         case 42: /* 42. <循环执行语句> -> <数据处理语句> */
         {
-            tmp = tree_node.top();
-            tree_node.pop();
+            tmp = tree_node_.top();
+            tree_node_.pop();
             node = tmp;
         }
             break;
         case 43: /* 43. <return语句> -> return ; */
         {
-            node->ast_name_ = "return语句";
+            node->type_ = "return语句";
         }
             break;
         case 44: /* 44. <return语句> -> return <表达式> ; */
         {
-            node->ast_name_ = "return语句";
+            node->type_ = "return语句";
 
-            ASTNode * exp = tree_node.top();
-            tree_node.pop();
+            ASTNode * exp = tree_node_.top();
+            tree_node_.pop();
             node->children_.emplace_front(exp);
         }
             break;
         case 45: /* 45. <break语句> -> break ; */
         {
-            node->ast_name_ = "break语句";
+            node->type_ = "break语句";
         }
             break;
         case 46: /* 46. <continue语句> -> continue ; */
         {
-            node->ast_name_ = "continue语句";
+            node->type_ = "continue语句";
         }
             break;
         case 47: /* 47. <语句> -> <声明语句> */
         {
-            tmp = tree_node.top();
-            tree_node.pop();
+            tmp = tree_node_.top();
+            tree_node_.pop();
             node = tmp;
         }
             break;
         case 48: /* 48. <语句> -> <执行语句> */
         {
-            tmp = tree_node.top();
-            tree_node.pop();
+            tmp = tree_node_.top();
+            tree_node_.pop();
             node = tmp;
         }
             break;
         case 49: /* 49. <声明语句> -> <值声明> */
         {
-            tmp = tree_node.top();
-            tree_node.pop();
+            tmp = tree_node_.top();
+            tree_node_.pop();
             node = tmp;
         }
             break;
         case 50: /* 50. <声明语句> -> <函数声明> */
         {
-            tmp = tree_node.top();
-            tree_node.pop();
+            tmp = tree_node_.top();
+            tree_node_.pop();
             node = tmp;
         }
             break;
         case 51: /* 51. <值声明> -> <常量声明> */
         {
-            tmp = tree_node.top();
-            tree_node.pop();
+            tmp = tree_node_.top();
+            tree_node_.pop();
             node = tmp;
         }
             break;
         case 52: /* 52. <值声明> -> <变量声明> */
         {
-            tmp = tree_node.top();
-            tree_node.pop();
+            tmp = tree_node_.top();
+            tree_node_.pop();
             node = tmp;
         }
             break;
         case 53: /* 53. <常量声明> -> const <数据类型> <常量声明表> */
         {
-            node->ast_name_ = "常量声明";
+            node->type_ = "常量声明";
 
-            ASTNode * table = tree_node.top();  // 常量声明表
-            tree_node.pop();
+            ASTNode * table = tree_node_.top();  // 常量声明表
+            tree_node_.pop();
 
-            ASTNode * type = tree_node.top();   // 数据类型
-            tree_node.pop();
+            ASTNode * type = tree_node_.top();   // 数据类型
+            tree_node_.pop();
 
             while (table)
             {
@@ -1407,38 +1531,53 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
             }
 
             node->children_.emplace_front(type);
+
+            Specifier * last = type_system_.NewType("const")->GetTypeObject();
+            Specifier * dst = ((TypeLink *)attribution_stack_.top())->GetTypeObject();  // 数据类型
+            type_system_.SpecifierCpy(dst, last);
         }
             break;
         case 54: /* 54. <数据类型> -> int */
         {
-            node->ast_name_ = "int";
+            node->type_ = "int";
+
+            attribute_node_ = type_system_.NewType("int");
+            attribution_stack_.emplace(attribute_node_);
         }
             break;
         case 55: /* 55. <数据类型> -> float */
         {
-            node->ast_name_ = "float";
+            node->type_ = "float";
+
+            attribute_node_ = type_system_.NewType("float");
+            attribution_stack_.emplace(attribute_node_);
         }
             break;
         case 56: /* 56. <数据类型> -> char */
         {
-            node->ast_name_ = "char";
+            node->type_ = "char";
+
+            attribute_node_ = type_system_.NewType("char");
+            attribution_stack_.emplace(attribute_node_);
         }
             break;
         case 57: /* 57. <数据类型> -> String */
         {
-            node->ast_name_ = "String";
+            node->type_ = "String";
+
+            attribute_node_ = type_system_.NewType("String");
+            attribution_stack_.emplace(attribute_node_);
         }
             break;
         case 58: /* 58. <常量声明表> -> <常量> = <常数> ; */
         {
-            node->ast_name_ = "初始化";
-            node->type_ = "AOP";
+            node->type_ = "INIT";
 
-            ASTNode * const_num = tree_node.top();
-            tree_node.pop();
+            ASTNode * const_num = tree_node_.top();
+            tree_node_.pop();
 
-            ASTNode * const_var = tree_node.top();
-            tree_node.pop();
+            ASTNode * const_var = tree_node_.top();
+            tree_node_.pop();
 
             const_num->pre_ = const_var;
             const_var->next_ = const_num;
@@ -1449,16 +1588,15 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
             break;
         case 59: /* 59. <常量声明表> -> <常量> = <常数> , <常量声明表> */
         {
-            ASTNode * table = tree_node.top();  // 常量声明表
-            tree_node.pop();
+            ASTNode * table = tree_node_.top();  // 常量声明表
+            tree_node_.pop();
 
             auto * new_table = new ASTNode();
-            new_table->ast_name_ = "初始化";
-            new_table->type_ = "AOP";
-            ASTNode * const_num = tree_node.top();   // 常数
-            tree_node.pop();
-            ASTNode * const_var = tree_node.top();  // 常量
-            tree_node.pop();
+            new_table->type_ = "INIT";
+            ASTNode * const_num = tree_node_.top();   // 常数
+            tree_node_.pop();
+            ASTNode * const_var = tree_node_.top();  // 常量
+            tree_node_.pop();
 
             const_num->pre_ = const_var;
             const_var->next_ = const_num;
@@ -1473,13 +1611,21 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
             break;
         case 60: /* 60. <变量声明> -> <数据类型> <变量声明表> */
         {
-            node->ast_name_ = "变量声明";
+            auto * symbol = (Symbol *)attribution_stack_.top();
+            attribution_stack_.pop();
+            auto * specifier = (TypeLink *)attribution_stack_.top();
+            attribution_stack_.pop();
 
-            ASTNode * table = tree_node.top();  // 变量声明表
-            tree_node.pop();
+            type_system_.AddSpecifierToDeclaration(specifier, symbol);
+            type_system_.AddSymbolsToTable(symbol, symbol_scope_);
 
-            ASTNode * type = tree_node.top();   // 数据类型
-            tree_node.pop();
+            node->type_ = "变量声明";
+
+            ASTNode * table = tree_node_.top();  // 变量声明表
+            tree_node_.pop();
+
+            ASTNode * type = tree_node_.top();   // 数据类型
+            tree_node_.pop();
 
             while (table)
             {
@@ -1488,100 +1634,148 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
             }
 
             node->children_.emplace_front(type);
+
+            SetAttribute(node);
         }
             break;
         case 61: /* 61. <变量声明表> -> <单变量声明> ; */
         {
-            tmp = tree_node.top();
-            tree_node.pop();
+            tmp = tree_node_.top();
+            tree_node_.pop();
             node = tmp;
+
+            auto * cur_symbol = (Symbol *)attribution_stack_.top();
+            cur_symbol->level_ = nesting_level_;
         }
             break;
         case 62: /* 62. <变量声明表> -> <单变量声明> , <变量声明表> */
         {
-            ASTNode * table = tree_node.top();  // 变量声明表
-            tree_node.pop();
+            ASTNode * table = tree_node_.top();  // 变量声明表
+            tree_node_.pop();
 
-            ASTNode * single_decl = tree_node.top();  // 单变量声明
-            tree_node.pop();
+            ASTNode * single_decl = tree_node_.top();  // 单变量声明
+            tree_node_.pop();
 
             table->pre_ = single_decl;
             single_decl->next_ = table;
 
             node = single_decl;
+
+            auto * cur_symbol = (Symbol *)attribution_stack_.top();
+            cur_symbol->level_ = nesting_level_;
+            attribution_stack_.pop();
+            auto * last_symbol = (Symbol *)attribution_stack_.top();
+            last_symbol->level_ = nesting_level_;
+            attribution_stack_.pop();
+            last_symbol->SetNextSymbol(cur_symbol);
+            attribution_stack_.emplace(last_symbol);
         }
             break;
         case 63: /* 63. <单变量声明> -> <变量> */
         {
-            tmp = tree_node.top();
-            tree_node.pop();
+            tmp = tree_node_.top();
+            tree_node_.pop();
             node = tmp;
+
+            attribute_node_ = type_system_.NewSymbol(tmp->content_, symbol_scope_);
+            attribution_stack_.emplace(attribute_node_);
         }
             break;
         case 64: /* 64. <单变量声明> -> <变量> = <布尔表达式> */
         {
-            node->ast_name_ = "初始化";
+            node->type_ = "INIT";
 
-            ASTNode * bool_exp = tree_node.top();
-            tree_node.pop();
+            ASTNode * bool_exp = tree_node_.top();
+            tree_node_.pop();
 
-            ASTNode * var = tree_node.top();
-            tree_node.pop();
+            ASTNode * var = tree_node_.top();
+            tree_node_.pop();
 
             bool_exp->pre_ = var;
             var->next_ = bool_exp;
             node->children_.emplace_front(bool_exp);
             node->children_.emplace_front(var);
+
+            attribute_node_ = type_system_.NewSymbol(var->content_, symbol_scope_);
+            attribution_stack_.emplace(attribute_node_);
         }
             break;
         case 65: /* 65. <函数声明> -> <函数类型> <函数名> ( <函数声明形参列表> ) ; */
         {
-            node->ast_name_ = "函数声明";
+            node->type_ = "函数声明";
 
-            ASTNode * func_args_list = tree_node.top();
-            tree_node.pop();
+            ASTNode * func_args_list = tree_node_.top();
+            tree_node_.pop();
 
-            ASTNode * func_name = tree_node.top();
-            tree_node.pop();
+            ASTNode * func_name = tree_node_.top();
+            tree_node_.pop();
 
-            ASTNode * type = tree_node.top();
-            tree_node.pop();
+            ASTNode * type = tree_node_.top();
+            tree_node_.pop();
 
             if (func_args_list)
+            {
                 func_args_list->pre_ = func_name;
-            func_name->next_ = func_args_list;
-            func_name->pre_ = type;
-            type->next_ = func_name;
-
-            node->children_.emplace_front(func_args_list);
-            node->children_.emplace_front(func_name);
+                type->next_ = func_args_list;
+                node->children_.emplace_front(func_args_list);
+            }
+            type->children_.emplace_front(func_name);
             node->children_.emplace_front(type);
+
+            Symbol * att_list;
+            if (func_args_list)
+            {
+                att_list = (Symbol *)attribution_stack_.top();
+                attribution_stack_.pop();
+            }
+            auto * att_name = type_system_.NewSymbol(func_name->content_, symbol_scope_);
+            auto * att_type = (TypeLink *)attribution_stack_.top();
+            attribution_stack_.pop();
+
+            type_system_.AddSpecifierToDeclaration(att_type, att_name);
+            type_system_.AddDeclarator(att_name, Declarator::FUNCTION);
+            if (func_args_list)
+            {
+                att_name->args_ = att_list;
+            }
+            else
+                att_list = nullptr;
+
+            type_system_.AddSymbolsToTable(att_name, symbol_scope_);
+            symbol_scope_ = "global";
         }
             break;
         case 66: /* 66. <函数类型> -> <数据类型> */
         {
-            tmp = tree_node.top();
-            tree_node.pop();
+            tmp = tree_node_.top();
+            tree_node_.pop();
             node = tmp;
         }
             break;
         case 67: /* 67. <函数类型> -> void*/
         {
-            node->ast_name_ = "void";
+            node->type_ = "void";
+
+            symbol_scope_ = "function_scope";
+            attribute_node_ = type_system_.NewType("void");
+            attribution_stack_.emplace(attribute_node_);
         }
             break;
         case 68: /* 68. <函数声明形参列表> -> <函数声明形参> */
         {
-            node->ast_name_ = "函数声明形参列表";
+            node->type_ = "函数声明形参列表";
 
-            ASTNode * func_args = tree_node.top();
-            tree_node.pop();
+            ASTNode * func_args = tree_node_.top();
+            tree_node_.pop();
 
             while (func_args)
             {
                 node->children_.emplace_back(func_args);
                 func_args = func_args->next_;
             }
+
+            auto * symbol = (Symbol *)attribution_stack_.top();
+            type_system_.AddSymbolsToTable(symbol, symbol_scope_);
         }
             break;
         case 69: /* 69. <函数声明形参列表> -> <epsilon> */
@@ -1589,62 +1783,95 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
             return nullptr;
         }
             break;
-        case 70: /* 70. <函数声明形参> -> <数据类型> */
+        case 70: /* 70. <函数声明形参> -> <数据类型> <变量> */
         {
-            tmp = tree_node.top();
-            tree_node.pop();
-            node = tmp;
+            ASTNode * var = tree_node_.top();    // 变量
+            tree_node_.pop();
+
+            ASTNode * type = tree_node_.top();   // 数据类型
+            tree_node_.pop();
+
+            type->children_.emplace_front(var);
+            node = type;
+
+            auto * symbol = type_system_.NewSymbol(var->content_, symbol_scope_);
+            symbol->level_ = nesting_level_;
+            auto * specifier = (TypeLink *)attribution_stack_.top();
+            attribution_stack_.pop();
+            type_system_.AddSpecifierToDeclaration(specifier, symbol);
+
+            attribution_stack_.emplace(symbol);
         }
             break;
-        case 71: /* 71. <函数声明形参> -> <数据类型> , <函数声明形参> */
+        case 71: /* 71. <函数声明形参> -> <数据类型> <变量> , <函数声明形参> */
         {
-            ASTNode * func_args = tree_node.top();  // 函数声明形参
-            tree_node.pop();
+            ASTNode * next_func_args = tree_node_.top();  // 函数声明形参
+            tree_node_.pop();
 
-            ASTNode * type = tree_node.top();   // 数据类型
-            tree_node.pop();
+            ASTNode * var = tree_node_.top();    // 变量
+            tree_node_.pop();
 
-            func_args->pre_ = type;
-            type->next_ = func_args;
+            ASTNode * type = tree_node_.top();   // 数据类型
+            tree_node_.pop();
 
+            type->children_.emplace_front(var);
+
+            next_func_args->pre_ = type;
+            type->next_ = next_func_args;
             node = type;
+
+            auto * args = (Symbol *)attribution_stack_.top();
+            attribution_stack_.pop();
+
+            auto * symbol = type_system_.NewSymbol(var->content_, symbol_scope_);
+            symbol->level_ = nesting_level_;
+            auto * specifier = (TypeLink *)attribution_stack_.top();
+            attribution_stack_.pop();
+            type_system_.AddSpecifierToDeclaration(specifier, symbol);
+
+            symbol->SetNextSymbol(args);
+            attribution_stack_.emplace(symbol);
         }
             break;
         case 72: /* 72. <表达式> -> <赋值表达式> */
         {
-            node->ast_name_ = "表达式";
+            node->type_ = "表达式";
 
-            tmp = tree_node.top();
-            tree_node.pop();
+            tmp = tree_node_.top();
+            tree_node_.pop();
             node->children_.emplace_front(tmp);
+
+            SetAttribute(node);
         }
             break;
         case 73: /* 73. <表达式> -> <简单表达式> */
         {
-            node->ast_name_ = "表达式";
+            node->type_ = "表达式";
 
-            tmp = tree_node.top();
-            tree_node.pop();
+            tmp = tree_node_.top();
+            tree_node_.pop();
             node->children_.emplace_front(tmp);
+
+            SetAttribute(node);
         }
             break;
         case 74: /* 74. <简单表达式> -> <布尔表达式> */
         {
-            tmp = tree_node.top();
-            tree_node.pop();
+            tmp = tree_node_.top();
+            tree_node_.pop();
             node = tmp;
         }
             break;
         case 75: /* 75. <赋值表达式> -> <变量> = <布尔表达式> */
         {
-            node->ast_name_ = "=";
+            node->content_ = "=";
             node->type_ = "AOP";
 
-            ASTNode * bool_exp = tree_node.top();
-            tree_node.pop();
+            ASTNode * bool_exp = tree_node_.top();
+            tree_node_.pop();
 
-            ASTNode * var = tree_node.top();
-            tree_node.pop();
+            ASTNode * var = tree_node_.top();
+            tree_node_.pop();
 
             bool_exp->pre_ = var;
             var->next_ = bool_exp;
@@ -1655,14 +1882,14 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
             break;
         case 76: /* 76. <布尔表达式> -> <布尔表达式> || <布尔项> */
         {
-            node->ast_name_ = "||";
+            node->content_ = "||";
             node->type_ = "BOP";
 
-            ASTNode * bool_term = tree_node.top();
-            tree_node.pop();
+            ASTNode * bool_term = tree_node_.top();
+            tree_node_.pop();
 
-            ASTNode * bool_exp = tree_node.top();
-            tree_node.pop();
+            ASTNode * bool_exp = tree_node_.top();
+            tree_node_.pop();
 
             bool_term->pre_ = bool_exp;
             bool_exp->next_ = bool_term;
@@ -1673,21 +1900,21 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
             break;
         case 77: /* 77. <布尔表达式> -> <布尔项> */
         {
-            tmp = tree_node.top();
-            tree_node.pop();
+            tmp = tree_node_.top();
+            tree_node_.pop();
             node = tmp;
         }
             break;
         case 78: /* 78. <布尔项> -> <布尔项> && <布尔因子> */
         {
-            node->ast_name_ = "&&";
+            node->content_ = "&&";
             node->type_ = "BOP";
 
-            ASTNode * bool_factor = tree_node.top();
-            tree_node.pop();
+            ASTNode * bool_factor = tree_node_.top();
+            tree_node_.pop();
 
-            ASTNode * bool_term = tree_node.top();
-            tree_node.pop();
+            ASTNode * bool_term = tree_node_.top();
+            tree_node_.pop();
 
             bool_factor->pre_ = bool_term;
             bool_term->next_ = bool_factor;
@@ -1698,101 +1925,101 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
             break;
         case 79: /* 79. <布尔项> -> <布尔因子> */
         {
-            tmp = tree_node.top();
-            tree_node.pop();
+            tmp = tree_node_.top();
+            tree_node_.pop();
             node = tmp;
         }
             break;
         case 80: /* 80. <布尔因子> -> ! <布尔因子> */
         {
-            node->ast_name_ = "!";
+            node->content_ = "!";
             node->type_ = "BOP";
 
-            ASTNode * bool_factor = tree_node.top();
-            tree_node.pop();
+            ASTNode * bool_factor = tree_node_.top();
+            tree_node_.pop();
             node->children_.emplace_front(bool_factor);
         }
             break;
         case 81: /* 81. <布尔因子> -> <关系表达式> */
         {
-            tmp = tree_node.top();
-            tree_node.pop();
+            tmp = tree_node_.top();
+            tree_node_.pop();
             node = tmp;
         }
             break;
         case 82: /* 82. <关系表达式> -> <算术表达式> */
         {
-            tmp = tree_node.top();
-            tree_node.pop();
+            tmp = tree_node_.top();
+            tree_node_.pop();
             node = tmp;
         }
             break;
         case 83: /* 83. <关系表达式> -> <算术表达式> <关系运算符> <算术表达式> */
         {
-            ASTNode * arith_exp1 = tree_node.top();
-            tree_node.pop();
+            ASTNode * arith_exp1 = tree_node_.top();
+            tree_node_.pop();
 
-            ASTNode * rel_op = tree_node.top();
-            tree_node.pop();
+            ASTNode * rel_op = tree_node_.top();
+            tree_node_.pop();
 
-            ASTNode * arith_exp2 = tree_node.top();
-            tree_node.pop();
+            ASTNode * arith_exp2 = tree_node_.top();
+            tree_node_.pop();
 
             arith_exp2->pre_ = arith_exp1;
             arith_exp1->next_ = arith_exp2;
-            rel_op->children_.emplace_front(arith_exp2);
             rel_op->children_.emplace_front(arith_exp1);
+            rel_op->children_.emplace_front(arith_exp2);
 
             node = rel_op;
         }
             break;
         case 84: /* 84. <关系运算符> -> > */
         {
-            node->ast_name_ = ">";
+            node->content_ = ">";
             node->type_ = "COP";
         }
             break;
         case 85: /* 85. <关系运算符> -> < */
         {
-            node->ast_name_ = "<";
+            node->content_ = "<";
             node->type_ = "COP";
         }
             break;
         case 86: /* 86. <关系运算符> -> >= */
         {
-            node->ast_name_ = ">=";
+            node->content_ = ">=";
             node->type_ = "COP";
         }
             break;
         case 87: /* 87. <关系运算符> -> <= */
         {
-            node->ast_name_ = "<=";
+            node->content_ = "<=";
             node->type_ = "COP";
         }
             break;
         case 88: /* 88. <关系运算符> -> == */
         {
-            node->ast_name_ = "==";
+            node->content_ = "==";
             node->type_ = "COP";
         }
             break;
         case 89: /* 89. <关系运算符> -> != */
         {
-            node->ast_name_ = "!=";
+            node->content_ = "!=";
             node->type_ = "COP";
         }
             break;
         case 90: /* 90. <算术表达式> -> <项> + <算术表达式> */
         {
-            node->ast_name_ = "+";
+            node->content_ = "+";
             node->type_ = "OOP";
 
-            ASTNode * term = tree_node.top();
-            tree_node.pop();
+            ASTNode * term = tree_node_.top();
+            tree_node_.pop();
             node->children_.emplace_front(term);
 
-            ASTNode * factor = tree_node.top();
-            tree_node.pop();
+            ASTNode * factor = tree_node_.top();
+            tree_node_.pop();
             node->children_.emplace_front(factor);
 
             term->pre_ = factor;
@@ -1801,15 +2028,15 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
             break;
         case 91: /* 91. <算术表达式> -> <项> - <算术表达式> */
         {
-            node->ast_name_ = "-";
+            node->content_ = "-";
             node->type_ = "OOP";
 
-            ASTNode * term = tree_node.top();
-            tree_node.pop();
+            ASTNode * term = tree_node_.top();
+            tree_node_.pop();
             node->children_.emplace_front(term);
 
-            ASTNode * factor = tree_node.top();
-            tree_node.pop();
+            ASTNode * factor = tree_node_.top();
+            tree_node_.pop();
             node->children_.emplace_front(factor);
 
             term->pre_ = factor;
@@ -1818,22 +2045,22 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
             break;
         case 92: /* 92. <算术表达式> -> <项> */
         {
-            tmp = tree_node.top();
-            tree_node.pop();
+            tmp = tree_node_.top();
+            tree_node_.pop();
             node = tmp;
         }
             break;
         case 93: /* 93. <项> -> <因子> * <项> */
         {
-            node->ast_name_ = "*";
+            node->content_ = "*";
             node->type_ = "OOP";
 
-            ASTNode * term = tree_node.top();
-            tree_node.pop();
+            ASTNode * term = tree_node_.top();
+            tree_node_.pop();
             node->children_.emplace_front(term);
 
-            ASTNode * factor = tree_node.top();
-            tree_node.pop();
+            ASTNode * factor = tree_node_.top();
+            tree_node_.pop();
             node->children_.emplace_front(factor);
 
             term->pre_ = factor;
@@ -1842,15 +2069,15 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
             break;
         case 94: /* 94. <项> -> <因子> / <项> */
         {
-            node->ast_name_ = "/";
+            node->content_ = "/";
             node->type_ = "OOP";
 
-            ASTNode * term = tree_node.top();
-            tree_node.pop();
+            ASTNode * term = tree_node_.top();
+            tree_node_.pop();
             node->children_.emplace_front(term);
 
-            ASTNode * factor = tree_node.top();
-            tree_node.pop();
+            ASTNode * factor = tree_node_.top();
+            tree_node_.pop();
             node->children_.emplace_front(factor);
 
             term->pre_ = factor;
@@ -1859,15 +2086,15 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
             break;
         case 95: /* 95. <项> -> <因子> % <项> */
         {
-            node->ast_name_ = "%";
+            node->content_ = "%";
             node->type_ = "OOP";
 
-            ASTNode * term = tree_node.top();
-            tree_node.pop();
+            ASTNode * term = tree_node_.top();
+            tree_node_.pop();
             node->children_.emplace_front(term);
 
-            ASTNode * factor = tree_node.top();
-            tree_node.pop();
+            ASTNode * factor = tree_node_.top();
+            tree_node_.pop();
             node->children_.emplace_front(factor);
 
             term->pre_ = factor;
@@ -1876,60 +2103,60 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
             break;
         case 96: /* 96. <项> -> <因子> */
         {
-            ASTNode * factor = tree_node.top();
-            tree_node.pop();
+            ASTNode * factor = tree_node_.top();
+            tree_node_.pop();
             node = factor;
         }
             break;
         case 97: /* 97. <因子> -> ( <算术表达式> ) */
         {
-            ASTNode * arith_exp = tree_node.top();
-            tree_node.pop();
+            ASTNode * arith_exp = tree_node_.top();
+            tree_node_.pop();
             node = arith_exp;
         }
             break;
         case 98: /* 98. <因子> -> <常数> */
         {
-            ASTNode * const_num = tree_node.top();
-            tree_node.pop();
+            ASTNode * const_num = tree_node_.top();
+            tree_node_.pop();
             node = const_num;
         }
             break;
         case 99: /* 99. <因子> -> <字符常量> */
         {
-            ASTNode * cconst = tree_node.top();
-            tree_node.pop();
+            ASTNode * cconst = tree_node_.top();
+            tree_node_.pop();
             node = cconst;
         }
             break;
         case 100: /* 100. <因子> -> <字符串常量> */
         {
-            ASTNode * sconst = tree_node.top();
-            tree_node.pop();
+            ASTNode * sconst = tree_node_.top();
+            tree_node_.pop();
             node = sconst;
         }
             break;
         case 101: /* 101. <因子> -> <变量> */
         {
-            ASTNode * var = tree_node.top();
-            tree_node.pop();
+            ASTNode * var = tree_node_.top();
+            tree_node_.pop();
             node = var;
         }
             break;
         case 102: /* 102. <因子> -> <函数调用> */
         {
-            ASTNode * func_call = tree_node.top();
-            tree_node.pop();
+            ASTNode * func_call = tree_node_.top();
+            tree_node_.pop();
 
             node = func_call;
         }
             break;
         case 103: /* 103. <函数调用>  -> <函数名> ( <实参列表> ) */
         {
-            node->ast_name_ = "函数调用";
+            node->type_ = "函数调用";
 
-            ASTNode * actual_args = tree_node.top();
-            tree_node.pop();
+            ASTNode * actual_args = tree_node_.top();
+            tree_node_.pop();
 
             while (actual_args)
             {
@@ -1937,8 +2164,8 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
                 actual_args = actual_args->next_;
             }
 
-            ASTNode * func_name = tree_node.top();
-            tree_node.pop();
+            ASTNode * func_name = tree_node_.top();
+            tree_node_.pop();
 
             if (actual_args)
                 actual_args->pre_ = func_name;
@@ -1948,19 +2175,19 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
             break;
         case 104: /* 104. <实参列表> -> <表达式> */
         {
-            ASTNode * exp = tree_node.top();
-            tree_node.pop();
+            ASTNode * exp = tree_node_.top();
+            tree_node_.pop();
 
             node = exp;
         }
             break;
         case 105: /* 105. <实参列表> -> <表达式> , <实参列表> */
         {
-            ASTNode * actual_args = tree_node.top();
-            tree_node.pop();
+            ASTNode * actual_args = tree_node_.top();
+            tree_node_.pop();
 
-            ASTNode * exp = tree_node.top();
-            tree_node.pop();
+            ASTNode * exp = tree_node_.top();
+            tree_node_.pop();
 
             actual_args->pre_ = exp;
             exp->next_ = actual_args;
@@ -1983,6 +2210,739 @@ ASTNode *LR1Parser::MkNode(size_t idx, std::stack<ASTNode *>& tree_node)
 ASTTree *LR1Parser::GetAST()
 {
     return tree;
+}
+
+/*!
+ * 将子树中的各个叶子节点与符号表关联起来
+ * 同时计算出常数的值放入节点中
+ * @param node
+ */
+void LR1Parser::SetAttribute(ASTNode *node)
+{
+    while (node)
+    {
+        for (auto& child : node->children_)
+        {
+            if (child->IsLeaf())
+            {
+                if (child->type_ == "<函数名>" || child->type_ == "<常量>" || child->type_ == "<变量>")
+                {
+                    // 内置函数
+                    if (CLibCall::GetInstance()->IsApiCall(child->content_))
+                        continue;
+
+                    child->symbol_ = type_system_.GetSymbolByText(child->content_);
+                    if (child->symbol_ != nullptr)
+                    {
+                        for (auto sym : type_system_.symbol_table_.find(child->content_)->second)
+                            if (sym->symbol_scope_ == symbol_scope_)
+                            {
+                                child->symbol_ = sym;
+                                break;
+                            }
+                    }
+                }
+                else if (child->type_ == "<常数>")
+                {
+                    if (child->content_.find('.') != std::string::npos) // 浮点数
+                    {
+                        child->is_int_ = false;
+                        child->f_value_ = std::stof(child->content_, nullptr);
+                    }
+                    else // 整数
+                    {
+                        child->is_int_ = true;
+
+                        if (child->content_ == "0")
+                        {
+                            child->i_value_ = 0;
+                            continue;
+                        }
+                        else if (child->content_.at(0) == '0')
+                        {
+                            if (child->content_.at(1) == 'x' || child->content_.at(1) == 'X')
+                                child->i_value_ = std::stoi(child->content_, nullptr, 16);
+                            else if (child->content_.at(1) == 'b' || child->content_.at(1) == 'B')
+                                child->i_value_ = std::stoi(child->content_, nullptr, 2);
+                            else
+                                child->i_value_ = std::stoi(child->content_, nullptr, 8);
+                        }
+                        else
+                        {
+                            child->i_value_ = std::stoi(child->content_, nullptr, 10);
+                        }
+                    }
+                }
+                else if (child->type_ == "<字符常量>")
+                    child->c_value_ = child->content_.at(1);
+                else if (child->type_ == "<字符串常量>")
+                    child->s_value_ = child->content_;
+            }
+            else
+                SetAttribute(child);
+        }
+        node = node->next_;
+    }
+}
+
+void LR1Parser::AddScope(ASTNode * node, const std::string& func_name)
+{
+    for (auto child : node->GetChildrenList())
+    {
+        // 此时还未删除空孩子节点
+        if (child == nullptr)
+            break;
+
+        if (child->IsLeaf())
+        {
+            if (child->type_ == "<变量>" || child->type_ == "<常量>")
+                child->GetSymbol()->SetScope(func_name);
+        }
+        else
+        {
+            AddScope(child, func_name);
+        }
+    }
+}
+
+void LR1Parser::GenerateAsm(ASTNode * node)
+{
+    if (node == nullptr)
+        return;
+
+    std::string type = node->type_;
+    if (type == "if语句")
+    {
+        ProgramGenerator::GetInstance()->IncreaseBranch();
+        ProgramGenerator::GetInstance()->if_stmt.emplace(ProgramGenerator::GetInstance()->branch_count);
+
+        auto iter0 = node->GetChildrenList().begin();
+        GenerateAsm(*iter0);
+
+        auto iter1 = node->GetChildrenList().begin();
+        std::advance(iter1, 1);
+        GenerateAsm(*iter1);
+
+        if (node->GetChildrenList().size() > 2) // 存在else分支
+        {
+            ProgramGenerator::EmitString(Instruction::GOTO.ToString() + " " + ProgramGenerator::GetInstance()->GetBranchOut() + "\n");
+            ProgramGenerator::EmitString(ProgramGenerator::GetInstance()->GetBranch() + ":\n");
+
+            auto iter2 = node->GetChildrenList().begin();
+            std::advance(iter2, 2);
+            // 执行else分支
+            GenerateAsm(*iter2);
+        }
+
+        ProgramGenerator::GetInstance()->EmitBranchOut();
+        ProgramGenerator::GetInstance()->if_stmt.pop();
+    }
+    else if (type == "for语句")
+    {
+        auto iter0 = node->GetChildrenList().begin();
+        GenerateAsm(*iter0);    // 执行赋值语句
+
+        ProgramGenerator::GetInstance()->IncreaseLoop();
+        ProgramGenerator::GetInstance()->loop_stmt.emplace(ProgramGenerator::GetInstance()->loop_count);
+        ProgramGenerator::GetInstance()->IncreaseBranch();
+        ProgramGenerator::GetInstance()->if_stmt.emplace(ProgramGenerator::GetInstance()->branch_count);
+        ProgramGenerator::EmitString("\n" +ProgramGenerator::GetInstance()->GetLoop() + ":\n");
+
+        auto iter1 = node->GetChildrenList().begin();
+        std::advance(iter1, 1);
+        GenerateAsm(*iter1);    // 执行比较
+
+        auto iter3 = node->GetChildrenList().begin();
+        std::advance(iter3, 3);
+        GenerateAsm(*iter3);
+
+        auto iter2 = node->GetChildrenList().begin();
+        std::advance(iter2, 2);
+        GenerateAsm(*iter2);
+
+        ProgramGenerator::EmitString(Instruction::GOTO.ToString() + " " + ProgramGenerator::GetInstance()->GetLoop() + "\n\n");
+        ProgramGenerator::EmitString(ProgramGenerator::GetInstance()->GetBranch() + ":\n");
+        ProgramGenerator::GetInstance()->loop_stmt.pop();
+        ProgramGenerator::GetInstance()->if_stmt.pop();
+    }
+    /* while 语句和 do-while 语句代码完全一样 */
+    else if (type == "while语句")
+    {
+        ProgramGenerator::GetInstance()->IncreaseLoop();
+        ProgramGenerator::GetInstance()->loop_stmt.emplace(ProgramGenerator::GetInstance()->loop_count);
+        ProgramGenerator::GetInstance()->IncreaseBranch();
+        ProgramGenerator::GetInstance()->if_stmt.emplace(ProgramGenerator::GetInstance()->branch_count);
+        ProgramGenerator::EmitString("\n" +ProgramGenerator::GetInstance()->GetLoop() + ":\n");
+
+        auto iter0 = node->GetChildrenList().begin();
+        GenerateAsm(*iter0);    // 执行比较
+
+        auto iter1 = node->GetChildrenList().begin();
+        std::advance(iter1, 1);
+        GenerateAsm(*iter1);    // 执行内部语句
+
+        ProgramGenerator::EmitString(Instruction::GOTO.ToString() + " " + ProgramGenerator::GetInstance()->GetLoop() + "\n\n");
+        ProgramGenerator::EmitString(ProgramGenerator::GetInstance()->GetBranch() + ":\n");
+        ProgramGenerator::GetInstance()->loop_stmt.pop();
+        ProgramGenerator::GetInstance()->if_stmt.pop();
+    }
+    else if (type == "do-while语句")
+    {
+        ProgramGenerator::GetInstance()->IncreaseLoop();
+        ProgramGenerator::GetInstance()->loop_stmt.emplace(ProgramGenerator::GetInstance()->loop_count);
+        ProgramGenerator::GetInstance()->IncreaseBranch();
+        ProgramGenerator::GetInstance()->if_stmt.emplace(ProgramGenerator::GetInstance()->branch_count);
+        ProgramGenerator::EmitString("\n" +ProgramGenerator::GetInstance()->GetLoop() + ":\n");
+
+        auto iter0 = node->GetChildrenList().begin();
+        GenerateAsm(*iter0);    // 执行内部语句
+
+        auto iter1 = node->GetChildrenList().begin();
+        std::advance(iter1, 1);
+        GenerateAsm(*iter1);    // 执行比较
+
+        ProgramGenerator::EmitString(Instruction::GOTO.ToString() + " " + ProgramGenerator::GetInstance()->GetLoop() + "\n\n");
+        ProgramGenerator::EmitString(ProgramGenerator::GetInstance()->GetBranch() + ":\n");
+        ProgramGenerator::GetInstance()->loop_stmt.pop();
+        ProgramGenerator::GetInstance()->if_stmt.pop();
+    }
+    else if (type == "INIT")
+    {
+        ASTNode * lhs = node->GetChildrenList().front();
+        ASTNode * rhs = node->GetChildrenList().back();
+
+        GenerateAsm(rhs);
+
+        int idx;
+        idx = GetLocalVariableIndex(lhs->GetSymbol());
+        if (rhs->type_ == "<变量>")
+        {
+            idx = GetLocalVariableIndex(rhs->GetSymbol());
+            if (idx != -1)
+                ProgramGenerator::Emit(Instruction::ILOAD, std::to_string(idx));
+            else
+                ProgramGenerator::Emit(Instruction::GETSTATIC, ProgramGenerator::program_name  + "/" + rhs->content_ + " I");
+        }
+        else if (rhs->type_ == "<常数>")
+        {
+            ProgramGenerator::Emit(Instruction::SIPUSH, std::to_string(rhs->i_value_));
+        }
+        // 函数调用返回值，OOP操作结果已经入栈，无需额外操作
+
+        if (idx != -1)
+            ProgramGenerator::Emit(Instruction::ISTORE, std::to_string(idx));
+        else
+            ProgramGenerator::Emit(Instruction::PUTSTATIC, ProgramGenerator::program_name  + "/" + lhs->content_ + " I");
+    }
+    else if (type == "函数调用")
+    {
+        // 内置函数的调用实现
+        if (CLibCall::GetInstance()->IsApiCall(node->GetChildrenList().front()->content_))
+        {
+            std::list<ASTNode *> args;
+            auto iter = node->GetChildrenList().begin();
+            std::advance(iter, 1);
+            size_t idx = 1;
+            while (idx++ < node->GetChildrenSize())
+            {
+                args.emplace_back((*iter)->GetChildrenList().front());
+                std::advance(iter, 1);
+            }
+
+            std::string arg_str = args.front()->s_value_;
+            arg_str.erase(std::find(arg_str.begin(), arg_str.end(), '"'));
+            arg_str.erase(std::find(arg_str.begin(), arg_str.end(), '"'));
+            args.pop_front();
+            std::string format_str;
+
+            int i = 0;
+            while (i < arg_str.length())
+            {
+                if (arg_str.at(i) == '%' && (i+1) < arg_str.length()
+                    && arg_str.at(i+1) == 'd')
+                {
+                    ProgramGenerator::Emit(Instruction::GETSTATIC, "java/lang/System/out Ljava/io/PrintStream;");
+                    ProgramGenerator::Emit(Instruction::LDC, "\"" + format_str + "\"");
+                    ProgramGenerator::Emit(Instruction::INVOKEVIRTUAL, "java/io/PrintStream/print(Ljava/lang/String;)V");
+
+                    format_str.clear();
+                    ASTNode * tmp = args.front();
+                    args.pop_front();
+
+                    if (tmp->type_ == "<变量>")
+                    {
+                        ProgramGenerator::Emit(Instruction::GETSTATIC, "java/lang/System/out Ljava/io/PrintStream;");
+                        idx = GetLocalVariableIndex(tmp->GetSymbol());
+                        if (idx != -1)
+                            ProgramGenerator::Emit(Instruction::ILOAD, std::to_string(idx));
+                        else
+                            ProgramGenerator::Emit(Instruction::GETSTATIC, ProgramGenerator::program_name  + "/" + tmp->content_ + " I");
+                        std::string print_method = "java/io/PrintStream/print(I)V";
+                        ProgramGenerator::Emit(Instruction::INVOKEVIRTUAL, print_method);
+                    }
+                    else if (tmp->type_ == "<常数>")
+                    {
+                        ProgramGenerator::Emit(Instruction::GETSTATIC, "java/lang/System/out Ljava/io/PrintStream;");
+                        ProgramGenerator::Emit(Instruction::SIPUSH, std::to_string(tmp->i_value_));
+                        ProgramGenerator::Emit(Instruction::INVOKEVIRTUAL, "java/io/PrintStream/print(I)V");
+                    }
+                    else
+                    {
+                        ProgramGenerator::Emit(Instruction::GETSTATIC, "java/lang/System/out Ljava/io/PrintStream;");
+                        GenerateAsm(tmp);
+                        ProgramGenerator::Emit(Instruction::INVOKEVIRTUAL, "java/io/PrintStream/print(I)V");
+                    }
+                    i+=2;
+                }
+                else
+                {
+                    format_str.append(1, arg_str.at(i));
+                    ++i;
+                }
+            }
+
+            ProgramGenerator::Emit(Instruction::GETSTATIC, "java/lang/System/out Ljava/io/PrintStream;");
+            ProgramGenerator::Emit(Instruction::LDC, "\"\n\"");
+            ProgramGenerator::Emit(Instruction::INVOKEVIRTUAL, "java/io/PrintStream/print(Ljava/lang/String;)V");
+
+            //CLibCall::GetInstance()->InvokeAPI(node->GetChildrenList().front()->content_, args);
+        }
+        else    // 普通函数调用
+        {
+            Symbol * func_symbol = node->GetChildrenList().front()->GetSymbol();
+            Symbol * func_args = func_symbol->args_;
+
+            if (func_args == nullptr)   // 无参数函数调用
+            {
+                std::string declaration = func_symbol->name_ + EmitArgs(func_symbol);
+                ProgramGenerator::Emit(Instruction::INVOKESTATIC, CodeGenerator::program_name + "/" + declaration);
+                ProgramGenerator::EmitDirective(Directive::METHOD_PUBLIC_STATIC, declaration);
+            }
+            else    // 有参数函数调用
+            {
+                auto tmp = func_args;
+                auto iter = node->GetChildrenList().begin();
+                while (tmp)
+                {
+                    std::advance(iter, 1);
+
+                    GenerateAsm(*iter);
+
+                    if ((*iter)->GetChildrenList().front()->type_ == "<变量>")
+                    {
+                        int idx = GetLocalVariableIndex((*iter)->GetChildrenList().front()->GetSymbol());
+                        if (idx != -1)
+                            ProgramGenerator::Emit(Instruction::ILOAD, std::to_string(idx));
+                        else    // 全局变量
+                            ProgramGenerator::Emit(Instruction::GETSTATIC, ProgramGenerator::program_name  + "/" + (*iter)->GetChildrenList().front()->content_ + " I");
+                    }
+                    else if ((*iter)->GetChildrenList().front()->type_ == "<常数>")
+                    {
+                        ProgramGenerator::Emit(Instruction::SIPUSH, std::to_string((*iter)->GetChildrenList().front()->i_value_));
+                    }
+                    // 函数调用，OOP的返回值已经压入了堆栈中，AOP不能作为实参传递
+
+                    tmp = tmp->GetNextSymbol();
+                }
+
+                std::string declaration = func_symbol->name_ + EmitArgs(func_symbol);
+                ProgramGenerator::Emit(Instruction::INVOKESTATIC, CodeGenerator::program_name + "/" + declaration);
+            }
+        }
+    }
+    else if (type == "return语句")
+    {
+        ASTNode * tmp = node->GetChildrenList().front();
+
+        if (tmp != nullptr)
+            GenerateAsm(tmp);
+
+        tmp = tmp->GetChildrenList().front();
+
+        if (tmp->type_ == "<变量>")
+        {
+            int idx = GetLocalVariableIndex(tmp->GetSymbol());
+            if (idx != -1)
+                ProgramGenerator::Emit(Instruction::ILOAD, std::to_string(idx));
+            else    // 全局变量
+                ProgramGenerator::Emit(Instruction::GETSTATIC, ProgramGenerator::program_name  + "/" + tmp->content_ + " I");
+            EmitReturnInstruction(tmp->GetSymbol());
+        }
+        else if (tmp->type_ == "<常数>")
+        {
+            ProgramGenerator::Emit(Instruction::SIPUSH, std::to_string(tmp->i_value_));
+            EmitReturnInstruction(tmp->GetSymbol());
+        }
+        else if (tmp->type_ == "函数调用")
+        {
+            EmitReturnInstruction(tmp->GetChildrenList().front()->GetSymbol());
+        }
+        else if (tmp->type_ == "AOP")   // AOP操作将栈顶元素赋给了变量，所以要重新将变量压入栈中
+        {
+            int idx = GetLocalVariableIndex(tmp->GetChildrenList().front()->GetSymbol());
+            if (idx != -1)
+                ProgramGenerator::Emit(Instruction::ILOAD, std::to_string(idx));
+            else
+                ProgramGenerator::Emit(Instruction::GETSTATIC, ProgramGenerator::program_name  + "/" + tmp->GetChildrenList().front()->content_ + " I");
+            EmitReturnInstruction(tmp->GetChildrenList().front()->GetSymbol());
+        }
+        else if (tmp->type_ == "OOP")
+        {
+            // OOP运算后的数据已经放在了栈顶，但是需要查看操作数的类型，此处未完成
+            ProgramGenerator::Emit(Instruction::IRETURN);
+        }
+    }
+    else
+    {
+        for (auto child : node->GetChildrenList())
+            GenerateAsm(child);
+    }
+
+    if (type == "AOP")
+    {
+        ASTNode * lhs = node->GetChildrenList().front();
+        ASTNode * rhs = node->GetChildrenList().back();
+
+        int idx;
+        idx = GetLocalVariableIndex(lhs->GetSymbol());
+        if (rhs->type_ == "<变量>")
+        {
+            idx = GetLocalVariableIndex(rhs->GetSymbol());
+            if (idx != -1)
+                ProgramGenerator::Emit(Instruction::ILOAD, std::to_string(idx));
+            else    // 全局变量
+                ProgramGenerator::Emit(Instruction::GETSTATIC, ProgramGenerator::program_name  + "/" + rhs->content_ + " I");
+        }
+        else if (rhs->type_ == "<常数>")
+        {
+            ProgramGenerator::Emit(Instruction::SIPUSH, std::to_string(rhs->i_value_));
+        }
+        // 如果rhs的type_为其它，说明其结果已经入栈，无需额外操作
+
+        if (idx != -1)
+            ProgramGenerator::Emit(Instruction::ISTORE, std::to_string(idx));
+        else
+            ProgramGenerator::Emit(Instruction::PUTSTATIC, ProgramGenerator::program_name  + "/" + lhs->content_ + " I");
+    }
+
+    if (type == "OOP")
+    {
+        ASTNode * lhs = node->GetChildrenList().front();
+        ASTNode * rhs = node->GetChildrenList().back();
+
+        if (node->content_ == "+")
+        {
+            if (lhs->type_ == "<变量>")
+            {
+                int idx = GetLocalVariableIndex(lhs->GetSymbol());
+                if (idx != -1)
+                    ProgramGenerator::Emit(Instruction::ILOAD, std::to_string(idx));
+                else    // 全局变量
+                    ProgramGenerator::Emit(Instruction::GETSTATIC, ProgramGenerator::program_name  + "/" + lhs->content_ + " I");
+            }
+            else if (lhs->type_ == "<常数>")
+            {
+                ProgramGenerator::Emit(Instruction::SIPUSH, std::to_string(lhs->i_value_));
+            }
+
+            if (rhs->type_ == "<变量>")
+            {
+                int idx = GetLocalVariableIndex(rhs->GetSymbol());
+                if (idx != -1)
+                    ProgramGenerator::Emit(Instruction::ILOAD, std::to_string(idx));
+                else    // 全局变量
+                    ProgramGenerator::Emit(Instruction::GETSTATIC, ProgramGenerator::program_name  + "/" + rhs->content_ + " I");
+            }
+            else if (rhs->type_ == "<常数>")
+            {
+                ProgramGenerator::Emit(Instruction::SIPUSH, std::to_string(rhs->i_value_));
+            }
+
+            // 如果其lhs和rhs的type_是其它，说明其运算结果已经放入堆栈，无需取出压入
+            ProgramGenerator::Emit(Instruction::IADD);
+        }
+        if (node->content_ == "-")
+        {
+            if (lhs->type_ == "<变量>")
+            {
+                int idx = GetLocalVariableIndex(lhs->GetSymbol());
+                if (idx != -1)
+                    ProgramGenerator::Emit(Instruction::ILOAD, std::to_string(idx));
+                else    // 全局变量
+                    ProgramGenerator::Emit(Instruction::GETSTATIC, ProgramGenerator::program_name  + "/" + lhs->content_ + " I");
+            }
+            else if (lhs->type_ == "<常数>")
+            {
+                ProgramGenerator::Emit(Instruction::SIPUSH, std::to_string(lhs->i_value_));
+            }
+
+            if (rhs->type_ == "<变量>")
+            {
+                int idx = GetLocalVariableIndex(rhs->GetSymbol());
+                if (idx != -1)
+                    ProgramGenerator::Emit(Instruction::ILOAD, std::to_string(idx));
+                else    // 全局变量
+                    ProgramGenerator::Emit(Instruction::GETSTATIC, ProgramGenerator::program_name  + "/" + rhs->content_ + " I");
+            }
+            else if (rhs->type_ == "<常数>")
+            {
+                ProgramGenerator::Emit(Instruction::SIPUSH, std::to_string(rhs->i_value_));
+            }
+
+            // 如果其lhs和rhs的type_是其它，说明其运算结果已经放入堆栈，无需取出压入
+            ProgramGenerator::Emit(Instruction::ISUB);
+        }
+        if (node->content_ == "*")
+        {
+            if (lhs->type_ == "<变量>")
+            {
+                int idx = GetLocalVariableIndex(lhs->GetSymbol());
+                if (idx != -1)
+                    ProgramGenerator::Emit(Instruction::ILOAD, std::to_string(idx));
+                else    // 全局变量
+                    ProgramGenerator::Emit(Instruction::GETSTATIC, ProgramGenerator::program_name  + "/" + lhs->content_ + " I");
+            }
+            else if (lhs->type_ == "<常数>")
+            {
+                ProgramGenerator::Emit(Instruction::SIPUSH, std::to_string(lhs->i_value_));
+            }
+
+            if (rhs->type_ == "<变量>")
+            {
+                int idx = GetLocalVariableIndex(rhs->GetSymbol());
+                if (idx != -1)
+                    ProgramGenerator::Emit(Instruction::ILOAD, std::to_string(idx));
+                else    // 全局变量
+                    ProgramGenerator::Emit(Instruction::GETSTATIC, ProgramGenerator::program_name  + "/" + rhs->content_ + " I");
+            }
+            else if (rhs->type_ == "<常数>")
+            {
+                ProgramGenerator::Emit(Instruction::SIPUSH, std::to_string(rhs->i_value_));
+            }
+
+            // 如果其lhs和rhs的type_是其它，说明其运算结果已经放入堆栈，无需取出压入
+            ProgramGenerator::Emit(Instruction::IMUL);
+        }
+        if (node->content_ == "/")
+        {
+            if (lhs->type_ == "<变量>")
+            {
+                int idx = GetLocalVariableIndex(lhs->GetSymbol());
+                if (idx != -1)
+                    ProgramGenerator::Emit(Instruction::ILOAD, std::to_string(idx));
+                else    // 全局变量
+                    ProgramGenerator::Emit(Instruction::GETSTATIC, ProgramGenerator::program_name  + "/" + lhs->content_ + " I");
+            }
+            else if (lhs->type_ == "<常数>")
+            {
+                ProgramGenerator::Emit(Instruction::SIPUSH, std::to_string(lhs->i_value_));
+            }
+
+            if (rhs->type_ == "<变量>")
+            {
+                int idx = GetLocalVariableIndex(rhs->GetSymbol());
+                if (idx != -1)
+                    ProgramGenerator::Emit(Instruction::ILOAD, std::to_string(idx));
+                else    // 全局变量
+                    ProgramGenerator::Emit(Instruction::GETSTATIC, ProgramGenerator::program_name  + "/" + rhs->content_ + " I");
+            }
+            else if (rhs->type_ == "<常数>")
+            {
+                ProgramGenerator::Emit(Instruction::SIPUSH, std::to_string(rhs->i_value_));
+            }
+
+            // 如果其lhs和rhs的type_是其它，说明其运算结果已经放入堆栈，无需取出压入
+            ProgramGenerator::Emit(Instruction::IDIV);
+        }
+    }
+
+    if (type == "COP")
+    {
+        ASTNode * lhs = node->GetChildrenList().front();
+        ASTNode * rhs = node->GetChildrenList().back();
+
+        if (lhs->type_ == "<变量>")
+        {
+            int idx = GetLocalVariableIndex(lhs->GetSymbol());
+            if (idx != -1)
+                ProgramGenerator::Emit(Instruction::ILOAD, std::to_string(idx));
+            else    // 全局变量
+                ProgramGenerator::Emit(Instruction::GETSTATIC, ProgramGenerator::program_name  + "/" + lhs->content_+ " I");
+        }
+        else if (lhs->type_ == "<常数>")
+        {
+            ProgramGenerator::Emit(Instruction::SIPUSH, std::to_string(lhs->i_value_));
+        }
+
+        if (rhs->type_ == "<变量>")
+        {
+            int idx = GetLocalVariableIndex(rhs->GetSymbol());
+            if (idx != -1)
+                ProgramGenerator::Emit(Instruction::ILOAD, std::to_string(idx));
+            else    // 全局变量
+                ProgramGenerator::Emit(Instruction::GETSTATIC, ProgramGenerator::program_name  + "/" + rhs->content_ + " I");
+        }
+        else if (rhs->type_ == "<常数>")
+        {
+            ProgramGenerator::Emit(Instruction::SIPUSH, std::to_string(rhs->i_value_));
+        }
+
+        std::string branch = ProgramGenerator::GetInstance()->GetBranch() + "\n";
+        // 如果其lhs和rhs的type_是其它，说明其运算结果已经放入堆栈，无需取出压入
+        std::string oper = node->content_;
+        if (oper == "==")
+        {
+
+        }
+        if (oper == "<")
+        {
+            ProgramGenerator::EmitString(Instruction::IF_ICMPGE.ToString() + " " + branch);
+        }
+        if (oper == "<=")
+        {
+
+        }
+        if (oper == ">")
+        {
+            ProgramGenerator::EmitString(Instruction::IF_ICMPLE.ToString() + " " + branch);
+        }
+        if (oper == ">=")
+        {
+
+        }
+        if (oper == "!=")
+        {
+
+        }
+    }
+
+    if (type == "BOP")
+    {
+        ASTNode * lhs = node->GetChildrenList().front();
+        ASTNode * rhs = node->GetChildrenList().back();
+    }
+
+/*    if (type == "<变量>")
+        node->type_ = "<变量>";
+    if (type == "<常数>")
+        node->type_ = "<常数>";*/
+}
+
+int LR1Parser::GetLocalVariableIndex(Symbol *symbol)
+{
+    Symbol * func = type_system_.GetSymbolByText(symbol->symbol_scope_);
+    std::string func_name = func->name_;
+
+    std::list<Symbol *> local_variables;
+    Symbol * func_args = func->args_;
+    while (func_args)
+    {
+        local_variables.emplace_front(func_args);
+        func_args = func_args->GetNextSymbol();
+    }
+    local_variables.reverse();
+
+    local_vars_.clear();
+    GetVariblesByFuncBody((ASTNode *)func->body_);
+
+    for (auto sym : local_variables)    // 先将list中的函数参数去除
+    {
+        for (auto iter = local_vars_.begin(); iter != local_vars_.end(); ++iter)
+        {
+            if (*iter == sym)
+            {
+                local_vars_.erase(iter);
+                break;
+            }
+        }
+    }
+
+    local_variables.insert(local_variables.end(), local_vars_.begin(), local_vars_.end());
+
+    int idx = 0;
+    for (auto elem : local_variables)
+    {
+        if (elem == symbol)
+            return idx;
+        ++idx;
+    }
+
+    return -1;
+}
+
+/*!
+ * 递归遍历函数体，查看声明，得到变量的声明顺序
+ * @param node
+ * @return
+ */
+void LR1Parser::GetVariblesByFuncBody(ASTNode * node)
+{
+    for (auto child : node->GetChildrenList())
+    {
+        GetVariblesByFuncBody(child);
+
+        if (child->type_ == "变量声明")
+        {
+            ASTNode * tmp = child->GetChildrenList().front();
+            for (auto var : tmp->GetChildrenList())
+            {
+                if (var->type_ == "INIT")
+                    local_vars_.emplace_back(var->GetChildrenList().front()->GetSymbol());
+                else
+                    local_vars_.emplace_back(var->GetSymbol());
+            }
+        }
+    }
+}
+
+std::string LR1Parser::EmitArgs(Symbol *func)
+{
+    Symbol * func_args = func->args_;
+    std::list<Symbol *> params;
+    while (func_args)
+    {
+        params.emplace_back(func_args);
+        func_args = func_args->GetNextSymbol();
+    }
+    params.reverse();
+    std::string args = "(";
+    for (auto param : params)
+    {
+        std::string arg;
+        if (param->GetType() == "int")
+            arg += "I";
+
+        args += arg;
+    }
+
+    if (func->GetType() == "int")
+    {
+        args += ")I";
+    }
+    else
+    {
+        args += ")V";
+    }
+
+    return args;
+}
+
+void LR1Parser::EmitReturnInstruction(Symbol *sym)
+{
+    if (sym->GetType() == "int")
+        ProgramGenerator::Emit(Instruction::IRETURN);
+    else
+        ProgramGenerator::Emit(Instruction::RETURN);
+}
+
+void LR1Parser::CpySymbolToParent(ASTNode *child, ASTNode *parent)
+{
+    parent->type_ = child->type_;
+    parent->symbol_ = child->symbol_;
+    parent->i_value_ = child->i_value_;
+    parent->f_value_ = child->f_value_;
+    parent->c_value_ = child->c_value_;
+    parent->s_value_ = child->s_value_;
 }
 
 LR1Parser::~LR1Parser()
